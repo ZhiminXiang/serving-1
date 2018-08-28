@@ -40,6 +40,7 @@ import (
 	"github.com/knative/serving/pkg/reconciler/v1alpha1/route/config"
 	"github.com/knative/serving/pkg/reconciler/v1alpha1/route/resources"
 	"github.com/knative/serving/pkg/reconciler/v1alpha1/route/traffic"
+	"github.com/knative/serving/pkg/clouddns"
 	"go.uber.org/zap"
 )
 
@@ -62,6 +63,8 @@ type Reconciler struct {
 	// must go through domainConfigMutex
 	domainConfig      *config.Domain
 	domainConfigMutex sync.Mutex
+
+	cloudDNSProvider *clouddns.CloudDNSProvider
 }
 
 // Check that our Reconciler implements controller.Reconciler
@@ -81,6 +84,7 @@ func NewController(
 	virtualServiceInformer istioinformers.VirtualServiceInformer,
 ) *controller.Impl {
 
+	dnsProvider, _ := clouddns.NewCloudDNSProvider("zhiminx-prod-test")
 	// No need to lock domainConfigMutex yet since the informers that can modify
 	// domainConfig haven't started yet.
 	c := &Reconciler{
@@ -90,6 +94,7 @@ func NewController(
 		revisionLister:       revisionInformer.Lister(),
 		serviceLister:        serviceInformer.Lister(),
 		virtualServiceLister: virtualServiceInformer.Lister(),
+		cloudDNSProvider: dnsProvider,
 	}
 	impl := controller.NewImpl(c, c.Logger, "Routes")
 
@@ -190,6 +195,22 @@ func (c *Reconciler) reconcile(ctx context.Context, route *v1alpha1.Route) error
 	return nil
 }
 
+func buildEndpoint(host, ip string) []*clouddns.Endpoint {
+	endpoints := make(*clouddns.Endpoint, 1)
+	endpoints = append(endpoints, &clouddns.Endpoint{
+		DNSName: host,
+		Targets: Targets{ip},
+		RecordType: "A",
+		RecordTTL: 5,
+	})
+	return endpoints
+}
+
+func (c *Reconciler) getSharedGatewayIP() string {
+	service := c.serviceLister.Services("istio-system").Get("knative-ingressgateway")
+	return service.Status.LoadBalancer.Ingress[0].IP
+}
+
 // configureTraffic attempts to configure traffic based on the RouteSpec.  If there are missing
 // targets (e.g. Configurations without a Ready Revision, or Revision that isn't Ready or Inactive),
 // no traffic will be configured.
@@ -200,7 +221,14 @@ func (c *Reconciler) reconcile(ctx context.Context, route *v1alpha1.Route) error
 // In all cases we will add annotations to the referred targets.  This is so that when they become
 // routable we can know (through a listener) and attempt traffic configuration again.
 func (c *Reconciler) configureTraffic(ctx context.Context, r *v1alpha1.Route) (*v1alpha1.Route, error) {
-	r.Status.Domain = c.routeDomain(r)
+	host := c.routeDomain(r)
+	if r.Status.Domain == "" {
+		shareGatewayIP := c.getSharedGatewayIP()
+		if err := cloudDNSProvider.CreateRecords(buildEndpoint(host, shareGatewayIP)); err != nil {
+			return err
+		}
+	}
+	r.Status.Domain = host
 	logger := logging.FromContext(ctx)
 	t, err := traffic.BuildTrafficConfiguration(c.configurationLister, c.revisionLister, r)
 	badTarget, isTargetError := err.(traffic.TargetError)
