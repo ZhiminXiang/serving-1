@@ -81,10 +81,10 @@ func NewController(
 	configInformer servinginformers.ConfigurationInformer,
 	revisionInformer servinginformers.RevisionInformer,
 	serviceInformer corev1informers.ServiceInformer,
+	secretInformer corev1informers.SecretInformer,
 	virtualServiceInformer istioinformers.VirtualServiceInformer,
 ) *controller.Impl {
-
-	dnsProvider, _ := clouddns.NewCloudDNSProvider("zhiminx-prod-test")
+	dnsProvider, cloudDnsErr := clouddns.NewCloudDNSProvider("zhiminx-prod-test", secretInformer.Lister())
 	// No need to lock domainConfigMutex yet since the informers that can modify
 	// domainConfig haven't started yet.
 	c := &Reconciler{
@@ -97,6 +97,10 @@ func NewController(
 		cloudDNSProvider: dnsProvider,
 	}
 	impl := controller.NewImpl(c, c.Logger, "Routes")
+
+	if cloudDnsErr != nil {
+		c.Logger.Infof("Failed to start dns provider, error is %v", cloudDnsErr)
+	}
 
 	c.Logger.Info("Setting up event handlers")
 	routeInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -195,19 +199,10 @@ func (c *Reconciler) reconcile(ctx context.Context, route *v1alpha1.Route) error
 	return nil
 }
 
-func buildEndpoint(host, ip string) []*clouddns.Endpoint {
-	endpoints := make(*clouddns.Endpoint, 1)
-	endpoints = append(endpoints, &clouddns.Endpoint{
-		DNSName: host,
-		Targets: Targets{ip},
-		RecordType: "A",
-		RecordTTL: 5,
-	})
-	return endpoints
-}
+
 
 func (c *Reconciler) getSharedGatewayIP() string {
-	service := c.serviceLister.Services("istio-system").Get("knative-ingressgateway")
+	service, _ := c.serviceLister.Services("istio-system").Get("knative-ingressgateway")
 	return service.Status.LoadBalancer.Ingress[0].IP
 }
 
@@ -221,15 +216,26 @@ func (c *Reconciler) getSharedGatewayIP() string {
 // In all cases we will add annotations to the referred targets.  This is so that when they become
 // routable we can know (through a listener) and attempt traffic configuration again.
 func (c *Reconciler) configureTraffic(ctx context.Context, r *v1alpha1.Route) (*v1alpha1.Route, error) {
+	logger := logging.FromContext(ctx)
 	host := c.routeDomain(r)
-	if r.Status.Domain == "" {
+	if r.Status.Domain != host {
 		shareGatewayIP := c.getSharedGatewayIP()
-		if err := cloudDNSProvider.CreateRecords(buildEndpoint(host, shareGatewayIP)); err != nil {
-			return err
+		if shareGatewayIP != "" {
+			endpoints := make([]*clouddns.Endpoint, 1)
+			endpoints[0] = &clouddns.Endpoint{
+				DNSName: host,
+				Targets: clouddns.Targets{shareGatewayIP},
+				RecordType: "A",
+				RecordTTL: 5,
+			}
+			logger.Infof("host is %s, IP is %s, endpoint is %s", host, shareGatewayIP, *endpoints[0])
+			if err := c.cloudDNSProvider.CreateRecords(endpoints, logger); err != nil {
+				logger.Errorf("CreateRecords error: %v", err)
+				return nil, err
+			}
 		}
 	}
 	r.Status.Domain = host
-	logger := logging.FromContext(ctx)
 	t, err := traffic.BuildTrafficConfiguration(c.configurationLister, c.revisionLister, r)
 	badTarget, isTargetError := err.(traffic.TargetError)
 	if err != nil && !isTargetError {

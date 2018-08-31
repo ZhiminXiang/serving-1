@@ -133,6 +133,7 @@ func main() {
 	buildInformer := buildInformerFactory.Build().V1alpha1().Builds()
 	deploymentInformer := kubeInformerFactory.Apps().V1().Deployments()
 	coreServiceInformer := kubeInformerFactory.Core().V1().Services()
+	coreSecretInformer := kubeInformerFactory.Core().V1().Secrets()
 	endpointsInformer := kubeInformerFactory.Core().V1().Endpoints()
 	configMapInformer := kubeInformerFactory.Core().V1().ConfigMaps()
 	virtualServiceInformer := sharedInformerFactory.Networking().V1alpha3().VirtualServices()
@@ -164,6 +165,7 @@ func main() {
 			configurationInformer,
 			revisionInformer,
 			coreServiceInformer,
+			coreSecretInformer,
 			virtualServiceInformer,
 		),
 		service.NewController(
