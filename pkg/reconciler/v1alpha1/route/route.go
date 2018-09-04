@@ -57,6 +57,7 @@ type Reconciler struct {
 	configurationLister  listers.ConfigurationLister
 	revisionLister       listers.RevisionLister
 	serviceLister        corev1listers.ServiceLister
+	secretLister         corev1listers.SecretLister
 	virtualServiceLister istiolisters.VirtualServiceLister
 
 	// Domain configuration could change over time and access to domainConfig
@@ -93,6 +94,7 @@ func NewController(
 		configurationLister:  configInformer.Lister(),
 		revisionLister:       revisionInformer.Lister(),
 		serviceLister:        serviceInformer.Lister(),
+		secretLister:         secretInformer.Lister(),
 		virtualServiceLister: virtualServiceInformer.Lister(),
 		cloudDNSProvider: dnsProvider,
 	}
@@ -229,10 +231,16 @@ func (c *Reconciler) configureTraffic(ctx context.Context, r *v1alpha1.Route) (*
 				RecordTTL: 5,
 			}
 			logger.Infof("host is %s, IP is %s, endpoint is %s", host, shareGatewayIP, *endpoints[0])
-			if err := c.cloudDNSProvider.CreateRecords(endpoints, logger); err != nil {
+			saSecret, err := c.secretLister.Secrets("knative-serving").Get("cloud-dns-key")
+			if err != nil {
+				logger.Errorf("Fail to get secret: %v", err)
+			} else {
+				logger.Infof("Secret is %v", saSecret)
+			}
+			/*if err := c.cloudDNSProvider.CreateRecords(endpoints, logger); err != nil {
 				logger.Errorf("CreateRecords error: %v", err)
 				return nil, err
-			}
+			}*/
 		}
 	}
 	r.Status.Domain = host
