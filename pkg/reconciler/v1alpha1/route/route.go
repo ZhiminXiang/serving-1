@@ -64,8 +64,6 @@ type Reconciler struct {
 	// must go through domainConfigMutex
 	domainConfig      *config.Domain
 	domainConfigMutex sync.Mutex
-
-	cloudDNSProvider *clouddns.CloudDNSProvider
 }
 
 // Check that our Reconciler implements controller.Reconciler
@@ -85,7 +83,6 @@ func NewController(
 	secretInformer corev1informers.SecretInformer,
 	virtualServiceInformer istioinformers.VirtualServiceInformer,
 ) *controller.Impl {
-	dnsProvider, cloudDnsErr := clouddns.NewCloudDNSProvider("zhiminx-prod-test", secretInformer.Lister())
 	// No need to lock domainConfigMutex yet since the informers that can modify
 	// domainConfig haven't started yet.
 	c := &Reconciler{
@@ -96,13 +93,8 @@ func NewController(
 		serviceLister:        serviceInformer.Lister(),
 		secretLister:         secretInformer.Lister(),
 		virtualServiceLister: virtualServiceInformer.Lister(),
-		cloudDNSProvider: dnsProvider,
 	}
 	impl := controller.NewImpl(c, c.Logger, "Routes")
-
-	if cloudDnsErr != nil {
-		c.Logger.Infof("Failed to start dns provider, error is %v", cloudDnsErr)
-	}
 
 	c.Logger.Info("Setting up event handlers")
 	routeInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -231,16 +223,16 @@ func (c *Reconciler) configureTraffic(ctx context.Context, r *v1alpha1.Route) (*
 				RecordTTL: 5,
 			}
 			logger.Infof("host is %s, IP is %s, endpoint is %s", host, shareGatewayIP, *endpoints[0])
-			saSecret, err := c.secretLister.Secrets("knative-serving").Get("cloud-dns-key")
-			if err != nil {
-				logger.Errorf("Fail to get secret: %v", err)
-			} else {
-				logger.Infof("Secret is %v", saSecret)
-			}
-			/*if err := c.cloudDNSProvider.CreateRecords(endpoints, logger); err != nil {
+
+		        dnsProvider, err := clouddns.NewCloudDNSProvider("zhiminx-prod-test", c.secretLister)
+		        if err != nil {
+		        	logger.Errorf("Fail to get DNS provider: %v.", err)
+		        	return nil, err
+		        }
+			if err := dnsProvider.CreateRecords(endpoints, logger); err != nil {
 				logger.Errorf("CreateRecords error: %v", err)
 				return nil, err
-			}*/
+			}
 		}
 	}
 	r.Status.Domain = host

@@ -5,7 +5,6 @@ import (
         "context"
         "net"
         "strings"
-        "log"
 
         "golang.org/x/oauth2"
         "golang.org/x/oauth2/google"
@@ -13,7 +12,6 @@ import (
         googleapi "google.golang.org/api/googleapi"
         "go.uber.org/zap"
         corev1listers "k8s.io/client-go/listers/core/v1"
-        "k8s.io/apimachinery/pkg/labels"
 )
 
 type managedZonesCreateCallInterface interface {
@@ -122,17 +120,12 @@ func (m managedZonesService) List(project string) managedZonesListCallInterface 
 }
 
 func NewCloudDNSProvider(project string, secretLister corev1listers.SecretLister) (*CloudDNSProvider, error){
-        //saSecret, err := secretLister.Secrets("knative-serving").Get("cloud-dns-key")
-        saSecrets, err := secretLister.Secrets("knative-serving").List(labels.Everything())
-        if err != nil || saSecrets == nil {
-                return nil, fmt.Errorf("error getting clouddns service account", err)
+        saSecret, err := secretLister.Secrets("knative-serving").Get("cloud-dns-key")
+        if err != nil {
+                return nil, fmt.Errorf("Error to get Cloud DNS Key: %v", err)
         }
 
-        for _, secret := range saSecrets {
-                log.Printf("secret is %s.", *secret)
-        }
         saKey := "key.json"
-        saSecret := saSecrets[0]
         saBytes := saSecret.Data[saKey]
         if len(saBytes) == 0 {
                 return nil, fmt.Errorf("specfied key %q not found in secret %s/%s", saKey, saSecret.Namespace, saSecret.Name)
@@ -170,7 +163,6 @@ func newCloudDNSProviderServiceAccountCerts(project string, saBytes []byte) (*Cl
 }
 
 func (p *CloudDNSProvider) CreateRecords(endpoints []*Endpoint, logger *zap.SugaredLogger) error {
-        logger.Info("---CreateRecords start!")
         change := &dns.Change{}
         change.Additions = append(change.Additions, p.newFilteredRecords(endpoints, logger)...)
         return p.submitChange(change, logger)
@@ -178,7 +170,6 @@ func (p *CloudDNSProvider) CreateRecords(endpoints []*Endpoint, logger *zap.Suga
 
 // newFilteredRecords returns a collection of RecordSets based on the given endpoints and domainFilter.
 func (p *CloudDNSProvider) newFilteredRecords(endpoints []*Endpoint, logger *zap.SugaredLogger) []*dns.ResourceRecordSet {
-        logger.Info("-----newFilteredRecords %s", endpoints)
         records := []*dns.ResourceRecordSet{}
 
         for _, endpoint := range endpoints {
@@ -219,9 +210,6 @@ func (p *CloudDNSProvider) submitChange(change *dns.Change, logger *zap.SugaredL
                 logger.Info("All records are already up to date")
                 return nil
         }
-
-        logger.Info("------submitChange starts")
-
 
         zones, err := p.Zones(logger)
         if err != nil {
