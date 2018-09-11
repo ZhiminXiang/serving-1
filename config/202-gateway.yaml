@@ -35,7 +35,10 @@ spec:
     hosts:
     - "*"
     tls:
-      mode: PASSTHROUGH
+      httpsRedirect: true # sends 301 redirect for http requests.
+      mode: SIMPLE
+      privateKey: /etc/istio/ingressgateway-certs/tls.key
+      serverCertificate: /etc/istio/ingressgateway-certs/tls.crt
 ---
 # This is the Service definition for the ingress pods serving
 # Knative's shared Gateway.

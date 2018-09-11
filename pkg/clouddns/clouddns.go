@@ -120,7 +120,7 @@ func (m managedZonesService) List(project string) managedZonesListCallInterface 
 }
 
 func NewCloudDNSProvider(project string, secretLister corev1listers.SecretLister) (*CloudDNSProvider, error){
-        saSecret, err := secretLister.Secrets("knative-serving").Get("cloud-dns-key")
+        saSecret, err := secretLister.Secrets("cert-manager").Get("cloud-dns-key")
         if err != nil {
                 return nil, fmt.Errorf("Error to get Cloud DNS Key: %v", err)
         }
