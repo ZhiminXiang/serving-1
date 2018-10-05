@@ -27,7 +27,7 @@ import (
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 // +genclient:nonNamespaced
 
-// ManagedSslProvision aims to automatically provide SSL connection for the requested domain in the give ingress. 
+// ManagedSslProvision aims to automatically provide TLS certificate for the requested domain in the give ingress. 
 type ManagedTLSProvision struct {
 
         metav1.TypeMeta `json:",inline"`
