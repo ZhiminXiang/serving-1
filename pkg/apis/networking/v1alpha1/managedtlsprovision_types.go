@@ -102,6 +102,8 @@ type ManagedTLSProvisionStatus struct {
 const (
     ManagedTLSProvisionInProgress duckv1alpha1.ConditionType = "Provisioning"
 
+    ManagedTLSProvisionDeleting duckv1alpha1.ConditionType = "Deleting"
+
     ManagedTLSProvisionReady duckv1alpha1.ConditionType duckv1alpha1.ConditionReady
 
     ManagedTLSProvisionFailed duckv1alpha1.ConditionType = "Failed"
