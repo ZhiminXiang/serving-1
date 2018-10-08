@@ -26,7 +26,7 @@ import (
 // +genclient
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 // +genclient:nonNamespaced
-
+// 
 type TLS struct {
 
         metav1.TypeMeta `json:",inline"`
@@ -100,7 +100,7 @@ type CertificateResource struct {
         Secret Secret `json:"secret,omitempty"`
 
         // Expiration time of the certificate. In the RFC3339 format.
-        ExpirationTime string `json:"expirationTime,omitempty"`
+        ExpirationTime metav1.Time `json:"expirationTime,omitempty"`
 
         // A list of domain names that can be authenticated by the certificate.
         domainNames []string `json:"dnsNames,omitempty"`
