@@ -27,8 +27,7 @@ import (
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 // +genclient:nonNamespaced
 
-// ManagedSslProvision aims to automatically provide TLS certificate for the requested domain in the give ingress. 
-type ManagedTLSProvision struct {
+type TLS struct {
 
         metav1.TypeMeta `json:",inline"`
         
@@ -37,21 +36,21 @@ type ManagedTLSProvision struct {
         // +optional
         metav1.ObjectMeta `json:"metadata,omitempty"`
 
-        // Spec is the desired state of the ManagedTLSProvision.
+        // Spec is the desired state of the TLS.
         // More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#spec-and-status
         // +optional
-        Spec ManagedTLSProvisionSpec `json:"spec,omitempty"`
+        Spec TLSSpec `json:"spec,omitempty"`
 
-        // Status is the current state of the ManagedTLSProvisionStatus.
+        // Status is the current state of the TLS.
         // More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#spec-and-status
         // +optional
-        Status ManagedTLSProvisionStatus `json:"status,omitempty"`
+        Status TLSStatus `json:"status,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
-// ManagedTLSProvisionList is a collection of ManagedTLSProvision.
-type ManagedTLSProvisionList struct {
+// TLSList is a collection of TLS.
+type TLSList struct {
         metav1.TypeMeta `json:",inline"`
 
         // Standard object's metadata.
@@ -60,11 +59,11 @@ type ManagedTLSProvisionList struct {
         metav1.ListMeta `json:"metadata,omitempty"`
 
         // Items is the list of ManagedTLSProvision.
-        Items []ManagedTLSProvision `json:"items"`
+        Items []TLS `json:"items"`
 }
 
-// ManagedTLSProvisionSpec describes the state of ManagedTLSProvision the user wishes to exist.
-type ManagedTLSProvisionSpec struct {
+// TLSSpec describes the state of TLS the user wishes to exist.
+type TLSSpec struct {
 
         // TODO: Generation does not work correctly with CRD. They are scrubbed
         // by the APIserver (https://github.com/kubernetes/kubernetes/issues/58778)
@@ -75,36 +74,56 @@ type ManagedTLSProvisionSpec struct {
 
         // The domain we want to provide TLS for.
         Domain string `json:"domain,omitempty"`
-
-        // The name of the knative ingress that should terminate the SSL connection for the given domain.
-        // Currently it should be the ClusterIngress of Knative since we only have one ingress per cluster. 
-        TargetIngress Ingress `json:"ingress,omitempty"`
 }
 
-type Ingress struct {
-        // The name of Ingress.
-        Name string `json:"name,omitempty"`
-
-        // The namespace of Ingress.
-        Namespace string `json:"name,omitempty"`
-}
-
-// ManagedSslProvisionStatus describe the current state of the ManagedTLSProvision.
-type ManagedTLSProvisionStatus struct {
+// TLSStatus describe the current state of the TLS.
+type TLSStatus struct {
 
         // +optional condition of the 
         Conditions duckv1alpha1.Conditions `json:"conditions,omitempty"`
 
-        // The name of the certificate associated with the domain.
-        CertificateName string `json:"name,omitempty"`
+        // The created TLS resource that is associated with the TLS object.
+        ResourceReference CertificateResource `json:"resourceReference,omitempty"`
+}
+
+// The certificate resource related to the TLS.
+type CertificateResource struct {
+
+        // The name of the certificate resource.
+        Name `json:"name,omitempty"`
+
+        // The namespace of the certificate resource.
+        Namespace `json:"namespace,omitempty"`
+
+        // The corresponding secret of the certificate. This is optional since
+        // certificates may not be stored in the cluster as secrets.
+        Secret Secret `json:"secret,omitempty"`
+
+        // Expiration time of the certificate. In the RFC3339 format.
+        ExpirationTime string `json:"expirationTime,omitempty"`
+
+        // A list of domain names that can be authenticated by the certificate.
+        domainNames []string `json:"dnsNames,omitempty"`
+
+        // Description of the certificate.
+        Description string `json:"description,omitempty"`
+}
+
+type Secret struct {
+
+        // The name of the secret.
+        Name string `json:"name,omitempty"`
+
+        // The namespace of the secret.
+        Namespace string `json:"namespace,omitempty"`
 }
 
 const (
-    ManagedTLSProvisionInProgress duckv1alpha1.ConditionType = "Provisioning"
+    TLSProvisioning duckv1alpha1.ConditionType = "Provisioning"
 
-    ManagedTLSProvisionDeleting duckv1alpha1.ConditionType = "Deleting"
+    TLSDeleting duckv1alpha1.ConditionType = "Deleting"
 
-    ManagedTLSProvisionReady duckv1alpha1.ConditionType duckv1alpha1.ConditionReady
+    TLSReady duckv1alpha1.ConditionType duckv1alpha1.ConditionReady
 
-    ManagedTLSProvisionFailed duckv1alpha1.ConditionType = "Failed"
+    TLSProvisionFailed duckv1alpha1.ConditionType = "Failed"
 )
