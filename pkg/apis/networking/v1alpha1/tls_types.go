@@ -85,7 +85,14 @@ type TLSStatus struct {
 }
 
 type Certificate struct {
-    
+
+        // Hosts are a list of hosts included in the TLS certificate. The values in
+        // this list must match the name/s used in the tlsSecret. Defaults to the
+        // wildcard host setting for the loadbalancer controller fulfilling this
+        // ClusterIngress, if left unspecified.
+        // +optional
+        Hosts []string `json:"hosts,omitempty"`
+
         // SecretName is the name of the secret used to terminate SSL traffic.
         SecretName string `json:"secretName,omitempty"`
 
