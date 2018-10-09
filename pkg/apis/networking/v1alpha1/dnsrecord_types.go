@@ -82,40 +82,18 @@ type DNSRecordSpec struct {
         Domain string `json:"domain, omitempty"`
 
         // Target the source domain will map to. It can be an IP address or another domain.
-        Target string `json:"ip,omitempty"`
+        Target string `json:"target,omitempty"`
 }
 
 
 // DNSRecordStatus describe the current state of the DNSRecord.
 type DNSRecordStatus struct {
 
-        // The reference to the actual DNS record resource that is associated with the DNSRecord object. 
-        ResourceReference DNSRecordResource  `json:"resourceReference,omitempty"`
-
         // +optional
         Conditions duckv1alpha1.Conditions `json:"conditions,omitempty"`
-}
 
-// The actual resource of the DNS record.
-type DNSRecordResource struct {
-
-        // The name of the DNS record resource.
-        Name string `json:"name,omitempty"`
-
-        // Rrdatas: As defined in RFC 1035 (section 5) and RFC 1034 (section
-        // 3.6.1).
-        // For A record, it is the IP address of the DNS record.
-        Rrdatas []string `json:"rrdatas,omitempty"`
-
-        // The number of seconds that this DNS record will be cached by resolvers.
-        TTL int64 `json:"ttl,omitempty"`
-
-        // The identifier of a supported record type, for example, A,
-        // AAAA, MX, TXT, and so on.
-        Type string `json:"type,omitempty"`
-
-        // The description of the DNS Record resource.
-        Description string `json:"description,omitempty"`
+        // The reference to the resources related to the DNS record.
+        ResourceReference *core.ObjectReference `json:"resourceReference,omitempty"`
 }
 
 // ConditionType represents a DNSRecord condition value

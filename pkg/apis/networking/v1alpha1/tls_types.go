@@ -26,7 +26,6 @@ import (
 // +genclient
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 // +genclient:nonNamespaced
-// 
 type TLS struct {
 
         metav1.TypeMeta `json:",inline"`
@@ -82,40 +81,8 @@ type TLSStatus struct {
         // +optional condition of the 
         Conditions duckv1alpha1.Conditions `json:"conditions,omitempty"`
 
-        // The created TLS resource that is associated with the TLS object.
-        ResourceReference CertificateResource `json:"resourceReference,omitempty"`
-}
-
-// The certificate resource related to the TLS.
-type CertificateResource struct {
-
-        // The name of the certificate resource.
-        Name `json:"name,omitempty"`
-
-        // The namespace of the certificate resource.
-        Namespace `json:"namespace,omitempty"`
-
-        // The corresponding secret of the certificate. This is optional since
-        // certificates may not be stored in the cluster as secrets.
-        Secret Secret `json:"secret,omitempty"`
-
-        // Expiration time of the certificate. In the RFC3339 format.
-        ExpirationTime metav1.Time `json:"expirationTime,omitempty"`
-
-        // A list of domain names that can be authenticated by the certificate.
-        domainNames []string `json:"dnsNames,omitempty"`
-
-        // Description of the certificate.
-        Description string `json:"description,omitempty"`
-}
-
-type Secret struct {
-
-        // The name of the secret.
-        Name string `json:"name,omitempty"`
-
-        // The namespace of the secret.
-        Namespace string `json:"namespace,omitempty"`
+        // The reference to the resources related to the TLS.
+        ResourceReferences []core.ObjectReference `json:"resourceReference,omitempty"`
 }
 
 const (
