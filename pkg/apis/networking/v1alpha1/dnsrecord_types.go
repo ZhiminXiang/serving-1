@@ -94,9 +94,6 @@ type DNSRecordStatus struct {
 
         // The observed generation of DNSRecord.
         ObservedGeneration `json:"observedGeneration,omitempty"`
-
-        // The reference to the resources related to the DNS record.
-        ResourceReference *core.ObjectReference `json:"resourceReference,omitempty"`
 }
 
 // ConditionType represents a DNSRecord condition value

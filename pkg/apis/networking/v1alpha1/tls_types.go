@@ -81,16 +81,34 @@ type TLSStatus struct {
         // +optional condition of the 
         Conditions duckv1alpha1.Conditions `json:"conditions,omitempty"`
 
-        // The reference to the resources related to the TLS.
-        ResourceReferences []core.ObjectReference `json:"resourceReference,omitempty"`
+        Certificate Certificate `json:"conditions,omitempty"`
+}
+
+type Certificate struct {
+    
+        // SecretName is the name of the secret used to terminate SSL traffic.
+        SecretName string `json:"secretName,omitempty"`
+
+        // SecretNamespace is the namespace of the secret used to terminate SSL traffic.
+        SecretNamespace string `json:"secretNamespace,omitempty"`
+
+        // ServerCertificate identifies the certificate filename in the secret.
+        // Defaults to `tls.cert`.
+        // +optional
+        ServerCertificate string `json:"serverCertificate,omitempty"`
+
+        // PrivateKey identifies the private key filename in the secret.
+        // Defaults to `tls.key`.
+        // +optional
+        PrivateKey string `json:"privateKey,omitempty"`
 }
 
 const (
-    TLSProvisioning duckv1alpha1.ConditionType = "Provisioning"
+        TLSProvisioning duckv1alpha1.ConditionType = "Provisioning"
 
-    TLSDeleting duckv1alpha1.ConditionType = "Deleting"
+        TLSDeleting duckv1alpha1.ConditionType = "Deleting"
 
-    TLSReady duckv1alpha1.ConditionType duckv1alpha1.ConditionReady
+        TLSReady duckv1alpha1.ConditionType = duckv1alpha1.ConditionReady
 
-    TLSProvisionFailed duckv1alpha1.ConditionType = "Failed"
+        TLSProvisionFailed duckv1alpha1.ConditionType = "Failed"
 )
