@@ -92,11 +92,8 @@ type DNSRecordStatus struct {
         // +optional
         Conditions duckv1alpha1.Conditions `json:"conditions,omitempty"`
 
-        // The domain currently set in the DNS record resource.
-        CurrentDomain string `json:"currentDomain, omitempty"`
-
-        // The target currently set in the DNS record resource.
-        CurrentTarget string `json:"currentTarget,omitempty"` 
+        // The observed generation of DNSRecord.
+        ObservedGeneration `json:"observedGeneration,omitempty"`
 
         // The reference to the resources related to the DNS record.
         ResourceReference *core.ObjectReference `json:"resourceReference,omitempty"`
