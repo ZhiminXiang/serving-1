@@ -284,7 +284,7 @@
   version = "v0.3.6"
 
 [[projects]]
-  digest = "1:55349aa75f3f57d00ce1da0f57740fc16d0c878519587d2ade9441af0ed236b7"
+  digest = "1:010e09f9dae2fd4b00a160563bdd283098f7bc667fa7548eb7ab4a08552f52bb"
   name = "github.com/jetstack/cert-manager"
   packages = [
     "pkg/apis/certmanager",
@@ -292,9 +292,15 @@
     "pkg/client/clientset/versioned",
     "pkg/client/clientset/versioned/scheme",
     "pkg/client/clientset/versioned/typed/certmanager/v1alpha1",
+    "pkg/client/informers/externalversions",
+    "pkg/client/informers/externalversions/certmanager",
     "pkg/client/informers/externalversions/certmanager/v1alpha1",
     "pkg/client/informers/externalversions/internalinterfaces",
     "pkg/client/listers/certmanager/v1alpha1",
+    "pkg/util",
+    "pkg/util/errors",
+    "pkg/util/kube",
+    "pkg/util/pki",
   ]
   pruneopts = "NUT"
   revision = "7924346bd84e41053cc508956b0a1b567c932416"
@@ -1046,8 +1052,11 @@
     "github.com/google/go-containerregistry/pkg/v1/remote",
     "github.com/gorilla/websocket",
     "github.com/jetstack/cert-manager/pkg/apis/certmanager/v1alpha1",
+    "github.com/jetstack/cert-manager/pkg/client/clientset/versioned",
+    "github.com/jetstack/cert-manager/pkg/client/informers/externalversions",
     "github.com/jetstack/cert-manager/pkg/client/informers/externalversions/certmanager/v1alpha1",
     "github.com/jetstack/cert-manager/pkg/client/listers/certmanager/v1alpha1",
+    "github.com/jetstack/cert-manager/pkg/util/kube",
     "github.com/knative/build/pkg/apis/build/v1alpha1",
     "github.com/knative/caching/pkg/apis/caching",
     "github.com/knative/caching/pkg/apis/caching/v1alpha1",

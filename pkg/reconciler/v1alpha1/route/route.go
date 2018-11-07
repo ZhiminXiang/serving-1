@@ -25,15 +25,6 @@ import (
 	"github.com/knative/pkg/configmap"
 	"github.com/knative/pkg/controller"
 	"github.com/knative/pkg/logging"
-	"go.uber.org/zap"
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/equality"
-	apierrs "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	corev1informers "k8s.io/client-go/informers/core/v1"
-	corev1listers "k8s.io/client-go/listers/core/v1"
-	"k8s.io/client-go/tools/cache"
-
 	"github.com/knative/pkg/tracker"
 	"github.com/knative/serving/pkg/apis/serving/v1alpha1"
 	servinginformers "github.com/knative/serving/pkg/client/informers/externalversions/serving/v1alpha1"
@@ -42,13 +33,21 @@ import (
 	"github.com/knative/serving/pkg/reconciler/v1alpha1/route/config"
 	"github.com/knative/serving/pkg/reconciler/v1alpha1/route/resources"
 	"github.com/knative/serving/pkg/reconciler/v1alpha1/route/traffic"
+	"go.uber.org/zap"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
+	apierrs "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	corev1informers "k8s.io/client-go/informers/core/v1"
+	corev1listers "k8s.io/client-go/listers/core/v1"
+	"k8s.io/client-go/tools/cache"
 )
 
 const (
 	controllerAgentName = "route-controller"
 )
 
-type configStore interface {
+type ConfigStore interface {
 	ToContext(ctx context.Context) context.Context
 	WatchConfigs(w configmap.Watcher)
 }
@@ -63,7 +62,7 @@ type Reconciler struct {
 	revisionLister       listers.RevisionLister
 	serviceLister        corev1listers.ServiceLister
 	virtualServiceLister istiolisters.VirtualServiceLister
-	configStore          configStore
+	configStore          ConfigStore
 	tracker              tracker.Interface
 }
 
@@ -210,7 +209,7 @@ func (c *Reconciler) reconcile(ctx context.Context, route *v1alpha1.Route) error
 // In all cases we will add annotations to the referred targets.  This is so that when they become
 // routable we can know (through a listener) and attempt traffic configuration again.
 func (c *Reconciler) configureTraffic(ctx context.Context, r *v1alpha1.Route) (*v1alpha1.Route, error) {
-	r.Status.Domain = routeDomain(ctx, r)
+	r.Status.Domain = RouteDomain(ctx, r)
 	logger := logging.FromContext(ctx)
 	t, err := traffic.BuildTrafficConfiguration(c.configurationLister, c.revisionLister, r)
 
@@ -277,7 +276,7 @@ func objectRef(a accessor) corev1.ObjectReference {
 	}
 }
 
-func routeDomain(ctx context.Context, route *v1alpha1.Route) string {
+func RouteDomain(ctx context.Context, route *v1alpha1.Route) string {
 	domainConfig := config.FromContext(ctx).Domain
 	domain := domainConfig.LookupDomainForLabels(route.ObjectMeta.Labels)
 	return fmt.Sprintf("%s.%s.%s", route.Name, route.Namespace, domain)

@@ -24,18 +24,36 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-type gcpCertificateCreator struct{}
+type GcpCertificateBuilder struct{}
 
-func (gc *gcpCertificateCreator) Create(ctx context.Context, route *v1alpha1.Route, hosts []string) (*certmanagerv1alpha1.Certificate, error) {
+func (gc GcpCertificateBuilder) Build(ctx context.Context, route *v1alpha1.Route, hosts []string, certName string) (*certmanagerv1alpha1.Certificate, error) {
 	cert := &certmanagerv1alpha1.Certificate{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      route.Name,
+			Name:      certName,
 			Namespace: route.Namespace,
 			// TODO(zhiminx): add a label here.
 		},
 		Spec: certmanagerv1alpha1.CertificateSpec{
-            SecretName: route.Name
-        },
+			SecretName: certName,
+			CommonName: hosts[0],
+			DNSNames:   hosts,
+			IssuerRef: certmanagerv1alpha1.ObjectReference{
+				Kind: "ClusterIssuer",
+				Name: "letsencrypt-issuer",
+			},
+			ACME: &certmanagerv1alpha1.ACMECertificateConfig{
+				Config: []certmanagerv1alpha1.DomainSolverConfig{
+					{
+						Domains: hosts,
+						SolverConfig: certmanagerv1alpha1.SolverConfig{
+							DNS01: &certmanagerv1alpha1.DNS01SolverConfig{
+								Provider: "cloud-dns-provider",
+							},
+						},
+					},
+				},
+			},
+		},
 	}
 
 	return cert, nil
