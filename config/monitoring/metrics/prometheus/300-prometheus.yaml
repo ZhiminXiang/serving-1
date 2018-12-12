@@ -265,6 +265,8 @@ spec:
           mountPath: /etc/prometheus/
         - name: prometheus-storage-volume
           mountPath: /prometheus/
+        - name: istio-certs
+          mountPath: /etc/istio-certs
       serviceAccountName: prometheus-system
       terminationGracePeriodSeconds: 600
       volumes:
@@ -274,5 +276,10 @@ spec:
           name: prometheus-scrape-config
       - name: prometheus-storage-volume
         emptyDir: {}
+      - name: istio-certs
+        secret:
+          defaultMode: 420
+          optional: true
+          secretName: istio.default
   updateStrategy:
     type: RollingUpdate

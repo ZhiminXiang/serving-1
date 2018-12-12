@@ -30,6 +30,12 @@ data:
     - job_name: autoscaler
       scrape_interval: 3s
       scrape_timeout: 3s
+      scheme: https
+      tls_config:
+        ca_file: /etc/istio-certs/root-cert.pem
+        cert_file: /etc/istio-certs/cert-chain.pem
+        key_file: /etc/istio-certs/key.pem
+        insecure_skip_verify: true  # prometheus does not support secure naming.
       kubernetes_sd_configs:
       - role: pod
       relabel_configs:
