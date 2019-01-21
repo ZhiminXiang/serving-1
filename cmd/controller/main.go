@@ -159,6 +159,7 @@ func main() {
 	endpointsInformer := kubeInformerFactory.Core().V1().Endpoints()
 	configMapInformer := kubeInformerFactory.Core().V1().ConfigMaps()
 	virtualServiceInformer := sharedInformerFactory.Networking().V1alpha3().VirtualServices()
+	gatewayInformer := sharedInformerFactory.Networking().V1alpha3().Gateways()
 	imageInformer := cachingInformerFactory.Caching().V1alpha1().Images()
 	knCertInformer := servingInformerFactory.Networking().V1alpha1().Certificates()
 	cmCertInformer := cmCertInformerFactory.Certmanager().V1alpha1().Certificates()
@@ -207,6 +208,7 @@ func main() {
 			opt,
 			clusterIngressInformer,
 			virtualServiceInformer,
+			gatewayInformer,
 		),
 		certificate.NewController(
 			opt,

@@ -18,9 +18,11 @@ package clusteringress
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"reflect"
 
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 
 	"github.com/knative/pkg/apis/istio/v1alpha3"
@@ -29,6 +31,7 @@ import (
 	"github.com/knative/pkg/configmap"
 	"github.com/knative/pkg/controller"
 	"github.com/knative/pkg/logging"
+	"github.com/knative/pkg/system"
 	"github.com/knative/serving/pkg/apis/networking"
 	"github.com/knative/serving/pkg/apis/networking/v1alpha1"
 	informers "github.com/knative/serving/pkg/client/informers/externalversions/networking/v1alpha1"
@@ -49,6 +52,16 @@ const (
 	controllerAgentName = "clusteringress-controller"
 )
 
+// clusterIngressFinalizer is the name that we put into the resource finalizer list, e.g.
+//  metadata:
+//    finalizers:
+//    - clusteringresses.networking.internal.knative.dev
+var (
+	//
+	clusterIngressResource  = v1alpha1.Resource("clusteringresses")
+	clusterIngressFinalizer = clusterIngressResource.String()
+)
+
 type configStore interface {
 	ToContext(ctx context.Context) context.Context
 	WatchConfigs(w configmap.Watcher)
@@ -61,7 +74,10 @@ type Reconciler struct {
 	// listers index properties about resources
 	clusterIngressLister listers.ClusterIngressLister
 	virtualServiceLister istiolisters.VirtualServiceLister
+	gatewayLister        istiolisters.GatewayLister
 	configStore          configStore
+
+	enableReconcilingGateway bool
 }
 
 // Check that our Reconciler implements controller.Reconciler
@@ -73,12 +89,15 @@ func NewController(
 	opt reconciler.Options,
 	clusterIngressInformer informers.ClusterIngressInformer,
 	virtualServiceInformer istioinformers.VirtualServiceInformer,
+	gatewayInformer istioinformers.GatewayInformer,
 ) *controller.Impl {
 
 	c := &Reconciler{
-		Base:                 reconciler.NewBase(opt, controllerAgentName),
-		clusterIngressLister: clusterIngressInformer.Lister(),
-		virtualServiceLister: virtualServiceInformer.Lister(),
+		Base:                     reconciler.NewBase(opt, controllerAgentName),
+		clusterIngressLister:     clusterIngressInformer.Lister(),
+		virtualServiceLister:     virtualServiceInformer.Lister(),
+		gatewayLister:            gatewayInformer.Lister(),
+		enableReconcilingGateway: false,
 	}
 	impl := controller.NewImpl(c, c.Logger, "ClusterIngresses", reconciler.MustNewStatsReporter("ClusterIngress", c.Logger))
 
@@ -174,7 +193,7 @@ func (c *Reconciler) updateStatus(desired *v1alpha1.ClusterIngress) (*v1alpha1.C
 func (c *Reconciler) reconcile(ctx context.Context, ci *v1alpha1.ClusterIngress) error {
 	logger := logging.FromContext(ctx)
 	if ci.GetDeletionTimestamp() != nil {
-		return nil
+		return c.reconcileDeletion(ctx, ci)
 	}
 
 	// We may be reading a version of the object that was stored at an older version
@@ -184,7 +203,8 @@ func (c *Reconciler) reconcile(ctx context.Context, ci *v1alpha1.ClusterIngress)
 	ci.SetDefaults()
 
 	ci.Status.InitializeConditions()
-	vs := resources.MakeVirtualService(ci, gatewayNamesFromContext(ctx, ci))
+	gatewayNames := gatewayNamesFromContext(ctx, ci)
+	vs := resources.MakeVirtualService(ci, gatewayNames)
 
 	logger.Infof("Reconciling clusterIngress :%v", ci)
 	logger.Info("Creating/Updating VirtualService")
@@ -193,12 +213,37 @@ func (c *Reconciler) reconcile(ctx context.Context, ci *v1alpha1.ClusterIngress)
 		// when error reconciling VirtualService?
 		return err
 	}
+
 	// As underlying network programming (VirtualService now) is stateless,
 	// here we simply mark the ingress as ready if the VirtualService
 	// is successfully synced.
 	ci.Status.MarkNetworkConfigured()
 	ci.Status.MarkLoadBalancerReady(getLBStatus(gatewayServiceURLFromContext(ctx, ci)))
 	ci.Status.ObservedGeneration = ci.Generation
+
+	// TODO(zhiminx): Istio requires to put certificates under the namespace where Istio ingress
+	// (pods) are deployed so that Istio ingress pods can consume them.
+	// So we need to copy certificates from their origin namespace to the Istio ingress namespace.
+
+	// TODO(zhiminx): currently we turn off Gateway reconciliation as it relies
+	// on Istio 1.1, which is not ready.
+	// We should eventually use a feature flag (in ConfigMap) to turn this on/off.
+
+	if c.enableReconcilingGateway {
+		// Add the finalizer before adding `Servers` into Gateway so that we can be sure
+		// the `Servers` get cleaned up from Gateway.
+		if err := c.ensureFinalizer(ci); err != nil {
+			return err
+		}
+
+		desiredServers := resources.MakeServers(ci)
+		if err := c.reconcileGateways(ctx, ci, gatewayNames, desiredServers); err != nil {
+			return err
+		}
+	}
+
+	// TODO(zhiminx): Mark Route status to indicate that Gateway is configured.
+
 	logger.Info("ClusterIngress successfully synced")
 	return nil
 }
@@ -293,5 +338,86 @@ func (c *Reconciler) reconcileVirtualService(ctx context.Context, ci *v1alpha1.C
 			"Updated status for VirtualService %q/%q", ns, name)
 	}
 
+	return nil
+}
+
+func (c *Reconciler) ensureFinalizer(ci *v1alpha1.ClusterIngress) error {
+	finalizers := sets.NewString(ci.Finalizers...)
+	if finalizers.Has(clusterIngressFinalizer) {
+		return nil
+	}
+	finalizers.Insert(clusterIngressFinalizer)
+
+	mergePatch := map[string]interface{}{
+		"metadata": map[string]interface{}{
+			"finalizers":      finalizers.List(),
+			"resourceVersion": ci.ResourceVersion,
+		},
+	}
+
+	patch, err := json.Marshal(mergePatch)
+	if err != nil {
+		return err
+	}
+
+	_, err = c.ServingClientSet.NetworkingV1alpha1().ClusterIngresses().Patch(ci.Name, types.MergePatchType, patch)
+	return err
+}
+
+func (c *Reconciler) reconcileDeletion(ctx context.Context, ci *v1alpha1.ClusterIngress) error {
+	logger := logging.FromContext(ctx)
+
+	// If our Finalizer is first, delete the `Servers` from Gateway for this ClusterIngress,
+	// and remove the finalizer.
+	if len(ci.Finalizers) == 0 || ci.Finalizers[0] != clusterIngressFinalizer {
+		return nil
+	}
+
+	gatewayNames := gatewayNamesFromContext(ctx, ci)
+	// Delete the Servers from Gateway for this ClusterIngress.
+	logger.Info("Cleaning up Gateway Servers")
+	if err := c.reconcileGateways(ctx, ci, gatewayNames, []v1alpha3.Server{}); err != nil {
+		return err
+	}
+
+	// Update the Route to remove the Finalizer.
+	logger.Info("Removing Finalizer")
+	ci.Finalizers = ci.Finalizers[1:]
+	_, err := c.ServingClientSet.NetworkingV1alpha1().ClusterIngresses().Update(ci)
+	return err
+}
+
+func (c *Reconciler) reconcileGateways(ctx context.Context, ci *v1alpha1.ClusterIngress, gatewayNames []string, desiredServers []v1alpha3.Server) error {
+	for _, gatewayName := range gatewayNames {
+		if err := c.reconcileGateway(ctx, ci, gatewayName, desiredServers); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c *Reconciler) reconcileGateway(ctx context.Context, ci *v1alpha1.ClusterIngress, gatewayName string, desired []v1alpha3.Server) error {
+	logger := logging.FromContext(ctx)
+	gateway, err := c.gatewayLister.Gateways(system.Namespace()).Get(gatewayName)
+	if err != nil {
+		// Not like VirtualService, A default gateway needs to be existed.
+		// It should be installed when installing Knative.
+		logger.Errorw("Failed to get Gateway.", zap.Error(err))
+		return err
+	}
+
+	existing := resources.GetServers(gateway, ci)
+	if equality.Semantic.DeepEqual(existing, desired) {
+		return nil
+	}
+
+	copy := gateway.DeepCopy()
+	copy = resources.UpdateGateway(copy, desired, existing)
+	if _, err := c.SharedClientSet.NetworkingV1alpha3().Gateways(copy.Namespace).Update(copy); err != nil {
+		logger.Errorw("Failed to update Gateway", zap.Error(err))
+		return err
+	}
+	c.Recorder.Eventf(ci, corev1.EventTypeNormal, "Updated",
+		"Updated Gateway %q/%q", gateway.Namespace, gateway.Name)
 	return nil
 }
