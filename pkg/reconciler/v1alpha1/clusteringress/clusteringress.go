@@ -18,7 +18,10 @@ package clusteringress
 
 import (
 	"context"
+	"fmt"
 	"reflect"
+	"sort"
+	"strings"
 
 	"github.com/knative/pkg/apis/istio/v1alpha3"
 	istioinformers "github.com/knative/pkg/client/informers/externalversions/istio/v1alpha3"
@@ -46,6 +49,10 @@ const (
 	IstioIngressClassName = "istio.ingress.networking.knative.dev"
 
 	controllerAgentName = "clusteringress-controller"
+
+	knativeServingNamespace = "knative-serving"
+
+	portNameSeparator = ":"
 )
 
 type configStore interface {
@@ -60,6 +67,7 @@ type Reconciler struct {
 	// listers index properties about resources
 	clusterIngressLister listers.ClusterIngressLister
 	virtualServiceLister istiolisters.VirtualServiceLister
+	gatewayLister        istiolisters.GatewayLister
 	configStore          configStore
 }
 
@@ -72,12 +80,14 @@ func NewController(
 	opt reconciler.Options,
 	clusterIngressInformer informers.ClusterIngressInformer,
 	virtualServiceInformer istioinformers.VirtualServiceInformer,
+	gatewayInformer istioinformers.GatewayInformer,
 ) *controller.Impl {
 
 	c := &Reconciler{
 		Base:                 reconciler.NewBase(opt, controllerAgentName),
 		clusterIngressLister: clusterIngressInformer.Lister(),
 		virtualServiceLister: virtualServiceInformer.Lister(),
+		gatewayLister:        gatewayInformer.Lister(),
 	}
 	impl := controller.NewImpl(c, c.Logger, "ClusterIngresses", reconciler.MustNewStatsReporter("ClusterIngress", c.Logger))
 
@@ -180,13 +190,18 @@ func (c *Reconciler) reconcile(ctx context.Context, ci *v1alpha1.ClusterIngress)
 	ci.SetDefaults()
 
 	ci.Status.InitializeConditions()
-	vs := resources.MakeVirtualService(ci, gatewayNamesFromContext(ctx, ci))
+	gatewayNames := gatewayNamesFromContext(ctx, ci)
+	vs := resources.MakeVirtualService(ci, gatewayNames)
 
 	logger.Infof("Reconciling clusterIngress :%v", ci)
 	logger.Info("Creating/Updating VirtualService")
 	if err := c.reconcileVirtualService(ctx, ci, vs); err != nil {
 		// TODO(lichuqiang): should we explicitly mark the ingress as unready
 		// when error reconciling VirtualService?
+		return err
+	}
+
+	if err := c.configureGateways(ctx, ci, gatewayNames); err != nil {
 		return err
 	}
 	// As underlying network programming (VirtualService now) is stateless,
@@ -284,4 +299,96 @@ func (c *Reconciler) reconcileVirtualService(ctx context.Context, ci *v1alpha1.C
 	}
 
 	return nil
+}
+
+func (c *Reconciler) configureGateways(ctx context.Context, ci *v1alpha1.ClusterIngress, gatewayNames []string) error {
+	for _, gatewayName := range gatewayNames {
+		if err := c.configureGateway(ctx, ci, gatewayName); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c *Reconciler) configureGateway(ctx context.Context, ci *v1alpha1.ClusterIngress, gatewayName string) error {
+	gateway, err := c.gatewayLister.Gateways(knativeServingNamespace).Get(gatewayName)
+	if err != nil {
+		return err
+	}
+
+	existingServers := getExistingServers(gateway, ci)
+	expectedServers := buildExpectedServers(ci)
+
+	if equality.Semantic.DeepEqual(existingServers, expectedServers) {
+		return nil
+	}
+
+	updatedGateway := gateway.DeepCopy()
+	updatedGateway = updateGateway(updatedGateway, expectedServers, ci)
+	if _, err := c.SharedClientSet.NetworkingV1alpha3().Gateways(gateway.Namespace).Update(updatedGateway); err != nil {
+		return err
+	}
+	return nil
+}
+
+func getExistingServers(gateway *v1alpha3.Gateway, ci *v1alpha1.ClusterIngress) []v1alpha3.Server {
+	var servers []v1alpha3.Server
+	for i := range gateway.Spec.Servers {
+		// All of the servers of a clusteringress should have the same prefix of portname, which is the clusteringress name + ":".
+		if belongsToClusterIngress(&gateway.Spec.Servers[i], ci) {
+			servers = append(servers, gateway.Spec.Servers[i])
+		}
+	}
+	return sortServers(servers)
+
+}
+
+func buildExpectedServers(ci *v1alpha1.ClusterIngress) []v1alpha3.Server {
+	var servers []v1alpha3.Server
+	for i := range ci.Spec.TLS {
+		tls := ci.Spec.TLS[i]
+		// Each TLS should only have one host according to Istio's restriction.
+		servers = append(servers, v1alpha3.Server{
+			Hosts: tls.Hosts[:1],
+			Port: v1alpha3.Port{
+				Name:     fmt.Sprintf("%s%s%s", ci.Name, portNameSeparator, tls.Hosts[0]),
+				Number:   443,
+				Protocol: "HTTPS",
+			},
+			TLS: &v1alpha3.TLSOptions{
+				Mode: v1alpha3.TLSModeSimple,
+			},
+		})
+	}
+	return sortServers(servers)
+}
+
+func updateGateway(gateway *v1alpha3.Gateway, newServers []v1alpha3.Server, ci *v1alpha1.ClusterIngress) *v1alpha3.Gateway {
+	var servers []v1alpha3.Server
+	for i := range gateway.Spec.Servers {
+		if !belongsToClusterIngress(&gateway.Spec.Servers[i], ci) {
+			servers = append(servers, gateway.Spec.Servers[i])
+		}
+	}
+	servers = append(servers, newServers...)
+	sortServers(servers)
+	gateway.Spec.Servers = servers
+	return gateway
+}
+
+func sortServers(servers []v1alpha3.Server) []v1alpha3.Server {
+	sort.Slice(servers, func(i, j int) bool {
+		switch strings.Compare(servers[i].Port.Name, servers[j].Port.Name) {
+		case -1:
+			return true
+		case 1:
+			return false
+		}
+		return true
+	})
+	return servers
+}
+
+func belongsToClusterIngress(server *v1alpha3.Server, ci *v1alpha1.ClusterIngress) bool {
+	return strings.HasPrefix(server.Port.Name, fmt.Sprintf("%s%s", ci.Name, portNameSeparator))
 }
