@@ -22,6 +22,7 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/knative/pkg/apis/istio/v1alpha3"
 	istioinformers "github.com/knative/pkg/client/informers/externalversions/istio/v1alpha3"
@@ -62,6 +63,7 @@ type configStore interface {
 
 // Reconciler implements controller.Reconciler for ClusterIngress resources.
 type Reconciler struct {
+	mutex sync.Mutex
 	*reconciler.Base
 
 	// listers index properties about resources
@@ -312,6 +314,8 @@ func (c *Reconciler) configureGateways(ctx context.Context, ci *v1alpha1.Cluster
 }
 
 func (c *Reconciler) configureGateway(ctx context.Context, ci *v1alpha1.ClusterIngress, gatewayName string) error {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
 	gateway, err := c.gatewayLister.Gateways(knativeServingNamespace).Get(gatewayName)
 	if err != nil {
 		return err
