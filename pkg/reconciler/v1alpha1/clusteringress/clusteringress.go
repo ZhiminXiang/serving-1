@@ -137,6 +137,7 @@ func (c *Reconciler) Reconcile(ctx context.Context, key string) error {
 	// Get the ClusterIngress resource with this name.
 	original, err := c.clusterIngressLister.Get(name)
 	if apierrs.IsNotFound(err) {
+		// TODO(zhiminx): remove the gateway servers of the deleted clusteringress.
 		// The resource may no longer exist, in which case we stop processing.
 		logger.Errorf("clusteringress %q in work queue no longer exists", key)
 		return nil
@@ -345,6 +346,8 @@ func getExistingServers(gateway *v1alpha3.Gateway, ci *v1alpha1.ClusterIngress) 
 
 func buildExpectedServers(ci *v1alpha1.ClusterIngress) []v1alpha3.Server {
 	var servers []v1alpha3.Server
+	// TODO(zhiminx): for the hosts that does not included in the TLS but listed in the Rules,
+	// do we consider them as HTTP hosts?
 	for i := range ci.Spec.TLS {
 		tls := ci.Spec.TLS[i]
 		// Each TLS should only have one host according to Istio's restriction.
@@ -366,9 +369,13 @@ func buildExpectedServers(ci *v1alpha1.ClusterIngress) []v1alpha3.Server {
 func updateGateway(gateway *v1alpha3.Gateway, newServers []v1alpha3.Server, ci *v1alpha1.ClusterIngress) *v1alpha3.Gateway {
 	var servers []v1alpha3.Server
 	for i := range gateway.Spec.Servers {
-		if !belongsToClusterIngress(&gateway.Spec.Servers[i], ci) {
-			servers = append(servers, gateway.Spec.Servers[i])
+		// We remove
+		//  1) the old servers belonging to the gateway
+		//  2) the default HTTP server and HTTPS server in the gateway because they are only used for the scenario of not reconciling gateway.
+		if belongsToClusterIngress(&gateway.Spec.Servers[i], ci) || isDefaultServer(&gateway.Spec.Servers[i]) {
+			continue
 		}
+		servers = append(servers, gateway.Spec.Servers[i])
 	}
 	servers = append(servers, newServers...)
 	sortServers(servers)
@@ -395,4 +402,8 @@ func belongsToClusterIngress(server *v1alpha3.Server, ci *v1alpha1.ClusterIngres
 		return false
 	}
 	return portNameSplits[0] == ci.Name
+}
+
+func isDefaultServer(server *v1alpha3.Server) bool {
+	return server.Port.Name == "http" || server.Port.Name == "https"
 }
