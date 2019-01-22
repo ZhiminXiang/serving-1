@@ -390,5 +390,9 @@ func sortServers(servers []v1alpha3.Server) []v1alpha3.Server {
 }
 
 func belongsToClusterIngress(server *v1alpha3.Server, ci *v1alpha1.ClusterIngress) bool {
-	return strings.HasPrefix(server.Port.Name, fmt.Sprintf("%s%s", ci.Name, portNameSeparator))
+	portNameSplits := strings.Split(server.Port.Name, portNameSeparator)
+	if len(portNameSplits) != 2 {
+		return false
+	}
+	return portNameSplits[0] == ci.Name
 }
