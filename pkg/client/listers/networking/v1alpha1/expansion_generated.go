@@ -15,6 +15,10 @@ limitations under the License.
 */
 package v1alpha1
 
+// CertificateListerExpansion allows custom methods to be added to
+// CertificateLister.
+type CertificateListerExpansion interface{}
+
 // ClusterIngressListerExpansion allows custom methods to be added to
 // ClusterIngressLister.
 type ClusterIngressListerExpansion interface{}
