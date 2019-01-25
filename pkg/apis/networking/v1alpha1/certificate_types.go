@@ -19,11 +19,11 @@ package v1alpha1
 import (
 	duckv1alpha1 "github.com/knative/pkg/apis/duck/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 // +genclient
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-// +genclient:nonNamespaced
 
 // Certificate is responsible for provisioning a SSL certificate for the
 // given hosts. It is a Knative abstraction for various SSL certificate
@@ -86,7 +86,11 @@ type CertificateStatus struct {
 	Conditions duckv1alpha1.Conditions `json:"conditions,omitempty"`
 }
 
-// ConditionType represents a ClusterIngress condition value
+func (cs *CertificateStatus) MarkReady() {
+	certificateCondSet.Manage(cs).MarkTrue(CertificateCondidtionReady)
+}
+
+// ConditionType represents a Certificate condition value
 const (
 	// CertificateConditionReady is set when the requested certificate
 	// is provioned and valid.
@@ -107,4 +111,13 @@ type CertificateInfo struct {
 	// by this resource in spec.secretName.
 	// +optional
 	NotAfter *metav1.Time `json:"notAfter,omitempty"`
+}
+
+var certificateCondSet = duckv1alpha1.NewLivingConditionSet(CertificateCondidtionReady)
+
+//var _ apis.Validatable = (*Certificate)(nil)
+//var _ apis.Defaultable = (*Certificate)(nil)
+
+func (r *Certificate) GetGroupVersionKind() schema.GroupVersionKind {
+	return SchemeGroupVersion.WithKind("Certificate")
 }

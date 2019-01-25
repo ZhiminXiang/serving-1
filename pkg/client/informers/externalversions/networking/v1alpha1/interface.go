@@ -40,7 +40,7 @@ func New(f internalinterfaces.SharedInformerFactory, namespace string, tweakList
 
 // Certificates returns a CertificateInformer.
 func (v *version) Certificates() CertificateInformer {
-	return &certificateInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
+	return &certificateInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
 }
 
 // ClusterIngresses returns a ClusterIngressInformer.

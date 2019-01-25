@@ -33,8 +33,8 @@ type NetworkingV1alpha1Client struct {
 	restClient rest.Interface
 }
 
-func (c *NetworkingV1alpha1Client) Certificates() CertificateInterface {
-	return newCertificates(c)
+func (c *NetworkingV1alpha1Client) Certificates(namespace string) CertificateInterface {
+	return newCertificates(c, namespace)
 }
 
 func (c *NetworkingV1alpha1Client) ClusterIngresses() ClusterIngressInterface {

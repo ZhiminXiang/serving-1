@@ -21,8 +21,8 @@ spec:
   version: v1alpha1
   names:
     kind: Certificate
-    plural: certificate
-    singular: certificates
+    plural: certificates
+    singular: certificate
     categories:
     - all
     - knative-internal

@@ -26,8 +26,8 @@ import (
 type CertificateLister interface {
 	// List lists all Certificates in the indexer.
 	List(selector labels.Selector) (ret []*v1alpha1.Certificate, err error)
-	// Get retrieves the Certificate from the index for a given name.
-	Get(name string) (*v1alpha1.Certificate, error)
+	// Certificates returns an object that can list and get Certificates.
+	Certificates(namespace string) CertificateNamespaceLister
 	CertificateListerExpansion
 }
 
@@ -49,9 +49,38 @@ func (s *certificateLister) List(selector labels.Selector) (ret []*v1alpha1.Cert
 	return ret, err
 }
 
-// Get retrieves the Certificate from the index for a given name.
-func (s *certificateLister) Get(name string) (*v1alpha1.Certificate, error) {
-	obj, exists, err := s.indexer.GetByKey(name)
+// Certificates returns an object that can list and get Certificates.
+func (s *certificateLister) Certificates(namespace string) CertificateNamespaceLister {
+	return certificateNamespaceLister{indexer: s.indexer, namespace: namespace}
+}
+
+// CertificateNamespaceLister helps list and get Certificates.
+type CertificateNamespaceLister interface {
+	// List lists all Certificates in the indexer for a given namespace.
+	List(selector labels.Selector) (ret []*v1alpha1.Certificate, err error)
+	// Get retrieves the Certificate from the indexer for a given namespace and name.
+	Get(name string) (*v1alpha1.Certificate, error)
+	CertificateNamespaceListerExpansion
+}
+
+// certificateNamespaceLister implements the CertificateNamespaceLister
+// interface.
+type certificateNamespaceLister struct {
+	indexer   cache.Indexer
+	namespace string
+}
+
+// List lists all Certificates in the indexer for a given namespace.
+func (s certificateNamespaceLister) List(selector labels.Selector) (ret []*v1alpha1.Certificate, err error) {
+	err = cache.ListAllByNamespace(s.indexer, s.namespace, selector, func(m interface{}) {
+		ret = append(ret, m.(*v1alpha1.Certificate))
+	})
+	return ret, err
+}
+
+// Get retrieves the Certificate from the indexer for a given namespace and name.
+func (s certificateNamespaceLister) Get(name string) (*v1alpha1.Certificate, error) {
+	obj, exists, err := s.indexer.GetByKey(s.namespace + "/" + name)
 	if err != nil {
 		return nil, err
 	}

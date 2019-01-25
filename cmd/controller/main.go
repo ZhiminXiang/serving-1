@@ -21,6 +21,8 @@ import (
 	"log"
 	"time"
 
+	certmanagerclientset "github.com/jetstack/cert-manager/pkg/client/clientset/versioned"
+	certmanagerinformers "github.com/jetstack/cert-manager/pkg/client/informers/externalversions"
 	cachingclientset "github.com/knative/caching/pkg/client/clientset/versioned"
 	cachinginformers "github.com/knative/caching/pkg/client/informers/externalversions"
 	sharedclientset "github.com/knative/pkg/client/clientset/versioned"
@@ -33,6 +35,7 @@ import (
 	"github.com/knative/serving/pkg/logging"
 	"github.com/knative/serving/pkg/metrics"
 	"github.com/knative/serving/pkg/reconciler"
+	"github.com/knative/serving/pkg/reconciler/v1alpha1/certificate"
 	"github.com/knative/serving/pkg/reconciler/v1alpha1/clusteringress"
 	"github.com/knative/serving/pkg/reconciler/v1alpha1/configuration"
 	"github.com/knative/serving/pkg/reconciler/v1alpha1/labeler"
@@ -110,6 +113,11 @@ func main() {
 		logger.Fatalw("Error building caching clientset", zap.Error(err))
 	}
 
+	certManagerClient, err := certmanagerclientset.NewForConfig(cfg)
+	if err != nil {
+		logger.Fatalf("Error building cert manager clientset: %v", err)
+	}
+
 	configMapWatcher := configmap.NewInformedWatcher(kubeClient, system.Namespace)
 
 	opt := reconciler.Options{
@@ -129,6 +137,7 @@ func main() {
 	servingInformerFactory := informers.NewSharedInformerFactory(servingClient, opt.ResyncPeriod)
 	cachingInformerFactory := cachinginformers.NewSharedInformerFactory(cachingClient, opt.ResyncPeriod)
 	buildInformerFactory := revision.KResourceTypedInformerFactory(opt)
+	cmCertInformerFactory := certmanagerinformers.NewSharedInformerFactory(certManagerClient, opt.ResyncPeriod)
 
 	serviceInformer := servingInformerFactory.Serving().V1alpha1().Services()
 	routeInformer := servingInformerFactory.Serving().V1alpha1().Routes()
@@ -136,6 +145,8 @@ func main() {
 	revisionInformer := servingInformerFactory.Serving().V1alpha1().Revisions()
 	kpaInformer := servingInformerFactory.Autoscaling().V1alpha1().PodAutoscalers()
 	clusterIngressInformer := servingInformerFactory.Networking().V1alpha1().ClusterIngresses()
+	knCertInformer := servingInformerFactory.Networking().V1alpha1().Certificates()
+	cmCertInformer := cmCertInformerFactory.Certmanager().V1alpha1().Certificates()
 	deploymentInformer := kubeInformerFactory.Apps().V1().Deployments()
 	coreServiceInformer := kubeInformerFactory.Core().V1().Services()
 	endpointsInformer := kubeInformerFactory.Core().V1().Endpoints()
@@ -189,6 +200,12 @@ func main() {
 			virtualServiceInformer,
 			gatewayInformer,
 		),
+		certificate.NewController(
+			opt,
+			knCertInformer,
+			cmCertInformer,
+			certManagerClient,
+		),
 	}
 
 	// Watch the logging config map and dynamically update logging levels.
@@ -201,6 +218,7 @@ func main() {
 	sharedInformerFactory.Start(stopCh)
 	servingInformerFactory.Start(stopCh)
 	cachingInformerFactory.Start(stopCh)
+	cmCertInformerFactory.Start(stopCh)
 	if err := configMapWatcher.Start(stopCh); err != nil {
 		logger.Fatalw("failed to start configuration manager", zap.Error(err))
 	}
@@ -214,6 +232,8 @@ func main() {
 		revisionInformer.Informer().HasSynced,
 		kpaInformer.Informer().HasSynced,
 		clusterIngressInformer.Informer().HasSynced,
+		knCertInformer.Informer().HasSynced,
+		cmCertInformer.Informer().HasSynced,
 		imageInformer.Informer().HasSynced,
 		deploymentInformer.Informer().HasSynced,
 		coreServiceInformer.Informer().HasSynced,
