@@ -21,9 +21,6 @@ import (
 	"sort"
 	"strings"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/intstr"
-
 	"github.com/knative/pkg/kmeta"
 	"github.com/knative/serving/pkg/activator"
 	"github.com/knative/serving/pkg/apis/networking/v1alpha1"
@@ -35,6 +32,8 @@ import (
 	"github.com/knative/serving/pkg/reconciler/v1alpha1/route/traffic"
 	"github.com/knative/serving/pkg/system"
 	"github.com/knative/serving/pkg/utils"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
 func isClusterLocal(r *servingv1alpha1.Route) bool {
@@ -43,7 +42,7 @@ func isClusterLocal(r *servingv1alpha1.Route) bool {
 
 // MakeClusterIngress creates ClusterIngress to set up routing rules. Such ClusterIngress specifies
 // which Hosts that it applies to, as well as the routing rules.
-func MakeClusterIngress(r *servingv1alpha1.Route, tc *traffic.Config) *v1alpha1.ClusterIngress {
+func MakeClusterIngress(r *servingv1alpha1.Route, tc *traffic.Config, tls []v1alpha1.ClusterIngressTLS) *v1alpha1.ClusterIngress {
 	ci := &v1alpha1.ClusterIngress{
 		ObjectMeta: metav1.ObjectMeta{
 			// As ClusterIngress resource is cluster-scoped,
@@ -56,12 +55,12 @@ func MakeClusterIngress(r *servingv1alpha1.Route, tc *traffic.Config) *v1alpha1.
 			OwnerReferences: []metav1.OwnerReference{*kmeta.NewControllerRef(r)},
 			Annotations:     r.ObjectMeta.Annotations,
 		},
-		Spec: makeClusterIngressSpec(r, tc.Targets),
+		Spec: makeClusterIngressSpec(r, tc.Targets, tls),
 	}
 	return ci
 }
 
-func makeClusterIngressSpec(r *servingv1alpha1.Route, targets map[string][]traffic.RevisionTarget) v1alpha1.IngressSpec {
+func makeClusterIngressSpec(r *servingv1alpha1.Route, targets map[string][]traffic.RevisionTarget, tls []v1alpha1.ClusterIngressTLS) v1alpha1.IngressSpec {
 	// Domain should have been specified in route status
 	// before calling this func.
 	domain := r.Status.Domain
@@ -83,6 +82,7 @@ func makeClusterIngressSpec(r *servingv1alpha1.Route, targets map[string][]traff
 	if isClusterLocal(r) {
 		spec.Visibility = v1alpha1.IngressVisibilityClusterLocal
 	}
+	spec.TLS = tls
 	return spec
 }
 

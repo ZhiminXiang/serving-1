@@ -81,10 +81,13 @@ func NewController(
 		DeleteFunc: impl.Enqueue,
 	})
 
-	cmCertificateInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    impl.EnqueueControllerOf,
-		UpdateFunc: controller.PassNew(impl.EnqueueControllerOf),
-		DeleteFunc: impl.EnqueueControllerOf,
+	cmCertificateInformer.Informer().AddEventHandler(cache.FilteringResourceEventHandler{
+		FilterFunc: controller.Filter(v1alpha1.SchemeGroupVersion.WithKind("Certificate")),
+		Handler: cache.ResourceEventHandlerFuncs{
+			AddFunc:    impl.EnqueueControllerOf,
+			UpdateFunc: controller.PassNew(impl.EnqueueControllerOf),
+			DeleteFunc: impl.EnqueueControllerOf,
+		},
 	})
 	return impl
 }

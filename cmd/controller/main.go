@@ -181,6 +181,7 @@ func main() {
 			revisionInformer,
 			coreServiceInformer,
 			clusterIngressInformer,
+			knCertInformer,
 		),
 		labeler.NewRouteToConfigurationController(
 			opt,
