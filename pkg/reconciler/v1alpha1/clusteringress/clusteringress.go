@@ -358,7 +358,7 @@ func buildExpectedServers(ci *v1alpha1.ClusterIngress) []v1alpha3.Server {
 		servers = append(servers, v1alpha3.Server{
 			Hosts: tls.Hosts,
 			Port: v1alpha3.Port{
-				Name:     fmt.Sprintf("%s%s%s", ci.Name, portNameSeparator, tls.Hosts[0]),
+				Name:     fmt.Sprintf("%s%s%d", ci.Name, portNameSeparator, i),
 				Number:   443,
 				Protocol: "HTTPS",
 			},
