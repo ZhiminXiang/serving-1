@@ -356,14 +356,15 @@ func buildExpectedServers(ci *v1alpha1.ClusterIngress) []v1alpha3.Server {
 		tls := ci.Spec.TLS[i]
 		// Each TLS should only have one host according to Istio's restriction.
 		servers = append(servers, v1alpha3.Server{
-			Hosts: tls.Hosts[:1],
+			Hosts: tls.Hosts,
 			Port: v1alpha3.Port{
 				Name:     fmt.Sprintf("%s%s%s", ci.Name, portNameSeparator, tls.Hosts[0]),
 				Number:   443,
 				Protocol: "HTTPS",
 			},
 			TLS: &v1alpha3.TLSOptions{
-				Mode: v1alpha3.TLSModeSimple,
+				CredentialName: tls.SecretName,
+				Mode:           v1alpha3.TLSModeSimple,
 			},
 		})
 	}

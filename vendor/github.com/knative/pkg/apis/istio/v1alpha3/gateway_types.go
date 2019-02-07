@@ -262,6 +262,8 @@ type TLSOptions struct {
 	// A list of alternate names to verify the subject identity in the
 	// certificate presented by the client.
 	SubjectAltNames []string `json:"subjectAltNames"`
+
+	CredentialName string `json:"credentialName"`
 }
 
 // TLS modes enforced by the proxy

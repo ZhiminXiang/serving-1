@@ -56,7 +56,7 @@ data:
   max-scale-up-rate: "10"
 
   # Scale to zero feature flag
-  enable-scale-to-zero: "true"
+  enable-scale-to-zero: "false"
 
   # This does nothing for now.
   enable-vertical-pod-autoscaling: "false"
