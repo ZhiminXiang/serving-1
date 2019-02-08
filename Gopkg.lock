@@ -383,6 +383,23 @@
   version = "v0.3.6"
 
 [[projects]]
+  digest = "1:4a5faf7cab6ae6dbb33c4c05876e04fbcdc0e57473c9c6995bdbf4f924478f35"
+  name = "github.com/jetstack/cert-manager"
+  packages = [
+    "pkg/apis/certmanager",
+    "pkg/apis/certmanager/v1alpha1",
+    "pkg/client/clientset/versioned",
+    "pkg/client/clientset/versioned/scheme",
+    "pkg/client/clientset/versioned/typed/certmanager/v1alpha1",
+    "pkg/client/informers/externalversions/certmanager/v1alpha1",
+    "pkg/client/informers/externalversions/internalinterfaces",
+    "pkg/client/listers/certmanager/v1alpha1",
+  ]
+  pruneopts = "NUT"
+  revision = "45fbfcd16cdd6a6a73c79f26d67ce72a2886c746"
+  version = "v0.6.1"
+
+[[projects]]
   digest = "1:1f2aebae7e7c856562355ec0198d8ca2fa222fb05e5b1b66632a1fce39631885"
   name = "github.com/jmespath/go-jmespath"
   packages = ["."]
@@ -501,7 +518,7 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:bb4a0cc53257bd07bb82b201d3afcf61c6c5ae51e91b2011a7484a91a9bb163a"
+  digest = "1:e10292ca31f337970056e5c3900ccc664385053baddff7fddc5f77b96c4114c5"
   name = "github.com/knative/test-infra"
   packages = [
     "scripts",
@@ -514,7 +531,7 @@
     "tools/dep-collector",
   ]
   pruneopts = "UT"
-  revision = "bf7e4dd5a226f5758e0eedd7370b99d33d464910"
+  revision = "425d36b7c2477efe7c8981dbdf76d2eb10c1d4e1"
 
 [[projects]]
   digest = "1:56dbf15e091bf7926cb33a57cb6bdfc658fc6d3498d2f76f10a97ce7856f1fde"
@@ -1287,6 +1304,10 @@
     "github.com/google/go-containerregistry/pkg/v1/remote",
     "github.com/google/go-containerregistry/pkg/v1/remote/transport",
     "github.com/gorilla/websocket",
+    "github.com/jetstack/cert-manager/pkg/apis/certmanager/v1alpha1",
+    "github.com/jetstack/cert-manager/pkg/client/clientset/versioned",
+    "github.com/jetstack/cert-manager/pkg/client/informers/externalversions/certmanager/v1alpha1",
+    "github.com/jetstack/cert-manager/pkg/client/listers/certmanager/v1alpha1",
     "github.com/knative/build-pipeline/pkg/apis/pipeline/v1alpha1",
     "github.com/knative/build-pipeline/pkg/client/clientset/versioned",
     "github.com/knative/build-pipeline/pkg/client/clientset/versioned/typed/pipeline/v1alpha1",
