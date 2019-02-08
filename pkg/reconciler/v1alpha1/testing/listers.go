@@ -17,6 +17,9 @@ limitations under the License.
 package testing
 
 import (
+	certmanager "github.com/jetstack/cert-manager/pkg/apis/certmanager/v1alpha1"
+	fakecmclientset "github.com/jetstack/cert-manager/pkg/client/clientset/versioned/fake"
+	certmanagerlisters "github.com/jetstack/cert-manager/pkg/client/listers/certmanager/v1alpha1"
 	cachingv1alpha1 "github.com/knative/caching/pkg/apis/caching/v1alpha1"
 	fakecachingclientset "github.com/knative/caching/pkg/client/clientset/versioned/fake"
 	cachinglisters "github.com/knative/caching/pkg/client/listers/caching/v1alpha1"
@@ -54,6 +57,7 @@ var clientSetSchemes = []func(*runtime.Scheme) error{
 	fakesharedclientset.AddToScheme,
 	fakeservingclientset.AddToScheme,
 	fakecachingclientset.AddToScheme,
+	fakecmclientset.AddToScheme,
 	buildAddToScheme,
 }
 
@@ -101,6 +105,10 @@ func (l *Listers) GetSharedObjects() []runtime.Object {
 	return l.sorter.ObjectsForSchemeFunc(fakesharedclientset.AddToScheme)
 }
 
+func (l *Listers) GetCMCertificateObjects() []runtime.Object {
+	return l.sorter.ObjectsForSchemeFunc(fakecmclientset.AddToScheme)
+}
+
 func (l *Listers) GetServiceLister() servinglisters.ServiceLister {
 	return servinglisters.NewServiceLister(l.indexerFor(&v1alpha1.Service{}))
 }
@@ -134,9 +142,20 @@ func (l *Listers) GetVirtualServiceLister() istiolisters.VirtualServiceLister {
 	return istiolisters.NewVirtualServiceLister(l.indexerFor(&istiov1alpha3.VirtualService{}))
 }
 
+<<<<<<< HEAD
 // GetGatewayLister gets lister for Istio Gateway resource.
 func (l *Listers) GetGatewayLister() istiolisters.GatewayLister {
 	return istiolisters.NewGatewayLister(l.indexerFor(&istiov1alpha3.Gateway{}))
+=======
+// GetKnCertificateLister gets lister for Knative Certificate resource.
+func (l *Listers) GetKnCertificateLister() networkinglisters.CertificateLister {
+	return networkinglisters.NewCertificateLister(l.indexerFor(&networking.Certificate{}))
+}
+
+// GetCMCertificateLister gets lister for Cert Manager Certificate resource.
+func (l *Listers) GetCMCertificateLister() certmanagerlisters.CertificateLister {
+	return certmanagerlisters.NewCertificateLister(l.indexerFor(&certmanager.Certificate{}))
+>>>>>>> 4e1ad0ed... initial test
 }
 
 func (l *Listers) GetImageLister() cachinglisters.ImageLister {

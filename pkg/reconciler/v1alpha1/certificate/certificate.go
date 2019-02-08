@@ -47,9 +47,9 @@ type Reconciler struct {
 	*reconciler.Base
 
 	// listers index properties about resources
-	knCertificateLister  listers.CertificateLister
-	cmCertificateLister  certmanagerlisters.CertificateLister
-	certManagerClientSet certmanagerclientset.Interface
+	knCertificateLister listers.CertificateLister
+	cmCertificateLister certmanagerlisters.CertificateLister
+	certManagerClient   certmanagerclientset.Interface
 }
 
 // NewController initializes the controller and is called by the generated code
@@ -58,13 +58,13 @@ func NewController(
 	opt reconciler.Options,
 	knCertificateInformer informers.CertificateInformer,
 	cmCertificateInformer certmanagerinformers.CertificateInformer,
-	certManagerClientSet certmanagerclientset.Interface,
+	certManagerClient certmanagerclientset.Interface,
 ) *controller.Impl {
 	c := &Reconciler{
-		Base:                 reconciler.NewBase(opt, controllerAgentName),
-		knCertificateLister:  knCertificateInformer.Lister(),
-		cmCertificateLister:  cmCertificateInformer.Lister(),
-		certManagerClientSet: certManagerClientSet,
+		Base:                reconciler.NewBase(opt, controllerAgentName),
+		knCertificateLister: knCertificateInformer.Lister(),
+		cmCertificateLister: cmCertificateInformer.Lister(),
+		certManagerClient:   certManagerClient,
 	}
 
 	impl := controller.NewImpl(c, c.Logger, "Certificate", reconciler.MustNewStatsReporter("Certificate", c.Logger))
@@ -146,7 +146,7 @@ func (c *Reconciler) reconcileCMCertificate(ctx context.Context, knCert *v1alpha
 	logger := logging.FromContext(ctx)
 	cmCert, err := c.cmCertificateLister.Certificates(desired.Namespace).Get(desired.Name)
 	if apierrs.IsNotFound(err) {
-		cmCert, err = c.certManagerClientSet.CertmanagerV1alpha1().Certificates(desired.Namespace).Create(desired)
+		cmCert, err = c.certManagerClient.CertmanagerV1alpha1().Certificates(desired.Namespace).Create(desired)
 		if err != nil {
 			logger.Error("Failed to create Cert-Manager certificate", zap.Error(err))
 			c.Recorder.Eventf(knCert, corev1.EventTypeWarning, "CreationFailed",
@@ -160,7 +160,7 @@ func (c *Reconciler) reconcileCMCertificate(ctx context.Context, knCert *v1alpha
 	} else if !equality.Semantic.DeepEqual(cmCert.Spec, desired.Spec) {
 		copy := cmCert.DeepCopy()
 		copy.Spec = desired.Spec
-		updated, err := c.certManagerClientSet.CertmanagerV1alpha1().Certificates(copy.Namespace).Update(copy)
+		updated, err := c.certManagerClient.CertmanagerV1alpha1().Certificates(copy.Namespace).Update(copy)
 		if err != nil {
 			logger.Error("Failed to update Cert-Manager Certificate", zap.Error(err))
 			return nil, err
