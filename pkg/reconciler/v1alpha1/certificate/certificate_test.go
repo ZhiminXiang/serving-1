@@ -16,9 +16,29 @@ limitations under the License.
 
 package certificate
 
-import "testing"
+import (
+	"testing"
+
+	fakecmclient "github.com/jetstack/cert-manager/pkg/client/clientset/versioned/fake"
+	"github.com/knative/pkg/controller"
+	"github.com/knative/serving/pkg/reconciler"
+	. "github.com/knative/serving/pkg/reconciler/v1alpha1/testing"
+)
 
 // This is heavily based on the way the OpenShift Ingress controller tests its reconciliation method.
 func TestReconcile(t *testing.T) {
+	table := TableTest{{
+		Name:                    "bad workqueue key",
+		Key:                     "too/many/parts",
+		SkipNamespaceValidation: true,
+	}}
 
+	table.Test(t, MakeFactory(func(listers *Listers, opt reconciler.Options) controller.Reconciler {
+		return &Reconciler{
+			Base:                reconciler.NewBase(opt, controllerAgentName),
+			knCertificateLister: listers.GetKnCertificateLister(),
+			cmCertificateLister: listers.GetCMCertificateLister(),
+			certManagerClient:   fakecmclient.NewSimpleClientset(listers.GetCMCertificateObjects()...),
+		}
+	}))
 }
