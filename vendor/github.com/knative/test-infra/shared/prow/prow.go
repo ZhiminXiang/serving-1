@@ -151,11 +151,14 @@ func NewJob(jobName, jobType, repoName string, pullID int) *Job {
 	return &job
 }
 
+<<<<<<< HEAD
 // PathExists checks if the storage path of a job exists in gcs or not
 func (j *Job) PathExists() bool {
 	return gcs.Exists(ctx, BucketName, j.StoragePath)
 }
 
+=======
+>>>>>>> f5ac0fdc... merge latest test-infra, ignores broken lint links (#3124)
 // GetLatestBuildNumber gets the latest build number for job
 func (j *Job) GetLatestBuildNumber() (int, error) {
 	logFilePath := path.Join(j.StoragePath, Latest)
