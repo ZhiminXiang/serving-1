@@ -1,9 +1,12 @@
 /*
-Copyright 2018 The Knative Authors
+Copyright 2019 The Knative Authors
+
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
-    http://www.apache.org/licenses/LICENSE-2.0
+
+	http://www.apache.org/licenses/LICENSE-2.0
+
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -15,27 +18,23 @@ package certificate
 
 import (
 	"context"
-	"fmt"
 	"reflect"
-	"sort"
-	"strings"
 
 	certmanagerv1alpha1 "github.com/jetstack/cert-manager/pkg/apis/certmanager/v1alpha1"
 	certmanagerclientset "github.com/jetstack/cert-manager/pkg/client/clientset/versioned"
 	certmanagerinformers "github.com/jetstack/cert-manager/pkg/client/informers/externalversions/certmanager/v1alpha1"
 	certmanagerlisters "github.com/jetstack/cert-manager/pkg/client/listers/certmanager/v1alpha1"
 	"github.com/knative/pkg/controller"
-	"github.com/knative/pkg/kmeta"
 	"github.com/knative/pkg/logging"
 	"github.com/knative/serving/pkg/apis/networking/v1alpha1"
 	informers "github.com/knative/serving/pkg/client/informers/externalversions/networking/v1alpha1"
 	listers "github.com/knative/serving/pkg/client/listers/networking/v1alpha1"
 	"github.com/knative/serving/pkg/reconciler"
+	"github.com/knative/serving/pkg/reconciler/v1alpha1/certificate/resources"
 	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrs "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/cache"
 )
 
@@ -131,75 +130,16 @@ func (c *Reconciler) Reconcile(ctx context.Context, key string) error {
 func (c *Reconciler) reconcile(ctx context.Context, knCert *v1alpha1.Certificate) error {
 	logger := logging.FromContext(ctx)
 
-	// TODO(zhiminx): set defaults for knCert
-	// TODO(zhiminx): initialize conditions of the status of knCert.
+	knCert.Status.InitializeConditions()
 
 	logger.Info("Reconciling Cert-Manager certificate.")
-	cmCert := c.makeCertManagerCertificate(knCert)
+	cmCert := resources.MakeCertManagerCertificate(knCert)
 	cmCert, err := c.reconcileCMCertificate(ctx, knCert, cmCert)
 	if err != nil {
 		return err
 	}
-	setCertStatus(knCert, cmCert)
+	setStatus(knCert, cmCert)
 	return nil
-}
-
-func (c *Reconciler) makeCertManagerCertificate(knCert *v1alpha1.Certificate) *certmanagerv1alpha1.Certificate {
-	dnsNames := makeWildcardHosts(knCert.Spec.DNSNames)
-	sort.Strings(dnsNames)
-	// For the DNS Names in knCert, we actually request a certificate with the wildcard format
-	// of these DNS Names so that this certificate could be reused.
-	return &certmanagerv1alpha1.Certificate{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      knCert.Name,
-			Namespace: knCert.Namespace,
-			// TODO(zhiminx): we may not want to add ownerreference because we probably need to cache CM certificates for a while.
-			OwnerReferences: []metav1.OwnerReference{*kmeta.NewControllerRef(knCert)},
-		},
-		Spec: certmanagerv1alpha1.CertificateSpec{
-			SecretName: knCert.Spec.SecretName,
-			DNSNames:   dnsNames,
-			// TODO(zhiminx): put the issuer into ConfigMap.
-			IssuerRef: certmanagerv1alpha1.ObjectReference{
-				Kind: "ClusterIssuer",
-				Name: "letsencrypt-issuer",
-			},
-			// TODO(zhiminx): put the provider into ConfigMap
-			ACME: &certmanagerv1alpha1.ACMECertificateConfig{
-				Config: []certmanagerv1alpha1.DomainSolverConfig{
-					{
-						Domains: dnsNames,
-						SolverConfig: certmanagerv1alpha1.SolverConfig{
-							DNS01: &certmanagerv1alpha1.DNS01SolverConfig{
-								Provider: "cloud-dns-provider",
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-}
-
-func makeWildcardHosts(dnsNames []string) []string {
-	var res []string
-	for _, dnsName := range dnsNames {
-		splits := strings.Split(dnsName, ".")
-		res = append(res, fmt.Sprintf("*.%s", strings.Join(splits[1:], ".")))
-	}
-	return dedup(res)
-}
-
-func dedup(strs []string) []string {
-	existed := make(map[string]struct{})
-	unique := []string{}
-	for _, s := range strs {
-		if _, ok := existed[s]; !ok {
-			existed[s] = struct{}{}
-			unique = append(unique, s)
-		}
-	}
-	return unique
 }
 
 func (c *Reconciler) reconcileCMCertificate(ctx context.Context, knCert *v1alpha1.Certificate, desired *certmanagerv1alpha1.Certificate) (*certmanagerv1alpha1.Certificate, error) {
@@ -218,9 +158,9 @@ func (c *Reconciler) reconcileCMCertificate(ctx context.Context, knCert *v1alpha
 	} else if err != nil {
 		return nil, err
 	} else if !equality.Semantic.DeepEqual(cmCert.Spec, desired.Spec) {
-		origin := cmCert.DeepCopy()
-		origin.Spec = desired.Spec
-		updated, err := c.certManagerClientSet.CertmanagerV1alpha1().Certificates(origin.Namespace).Update(origin)
+		copy := cmCert.DeepCopy()
+		copy.Spec = desired.Spec
+		updated, err := c.certManagerClientSet.CertmanagerV1alpha1().Certificates(copy.Namespace).Update(copy)
 		if err != nil {
 			logger.Error("Failed to update Cert-Manager Certificate", zap.Error(err))
 			return nil, err
@@ -232,24 +172,15 @@ func (c *Reconciler) reconcileCMCertificate(ctx context.Context, knCert *v1alpha
 	return cmCert, nil
 }
 
-func setCertStatus(knCert *v1alpha1.Certificate, cmCert *certmanagerv1alpha1.Certificate) {
+func setStatus(knCert *v1alpha1.Certificate, cmCert *certmanagerv1alpha1.Certificate) {
 	knCert.Status.CertificateInfo = v1alpha1.CertificateInfo{
 		SupportedDNSNames: cmCert.Spec.DNSNames,
 		NotAfter:          cmCert.Status.NotAfter,
 	}
 
-	if isCmCertificateReady(cmCert) {
+	if resources.IsCertManagerCertificateReady(cmCert) {
 		knCert.Status.MarkReady()
 	}
-}
-
-func isCmCertificateReady(cmCert *certmanagerv1alpha1.Certificate) bool {
-	for _, condition := range cmCert.Status.Conditions {
-		if condition.Type == certmanagerv1alpha1.CertificateConditionReady {
-			return condition.Status == certmanagerv1alpha1.ConditionTrue
-		}
-	}
-	return false
 }
 
 func (c *Reconciler) updateStatus(desired *v1alpha1.Certificate) (*v1alpha1.Certificate, error) {
