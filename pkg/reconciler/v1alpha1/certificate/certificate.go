@@ -154,7 +154,7 @@ func (c *Reconciler) reconcileCMCertificate(ctx context.Context, knCert *v1alpha
 			return nil, err
 		}
 		c.Recorder.Eventf(knCert, corev1.EventTypeNormal, "Created",
-			"Created Cert-Manager Certificate %q/%q", desired.Name, desired.Namespace)
+			"Created Cert-Manager Certificate %q/%q", desired.Namespace, desired.Name)
 	} else if err != nil {
 		return nil, err
 	} else if !equality.Semantic.DeepEqual(cmCert.Spec, desired.Spec) {
@@ -166,7 +166,7 @@ func (c *Reconciler) reconcileCMCertificate(ctx context.Context, knCert *v1alpha
 			return nil, err
 		}
 		c.Recorder.Eventf(knCert, corev1.EventTypeNormal, "Updated",
-			"Updated Spec for Cert-Manager Certificate %q/%q", desired.Name, desired.Namespace)
+			"Updated Spec for Cert-Manager Certificate %q/%q", desired.Namespace, desired.Name)
 		return updated, nil
 	}
 	return cmCert, nil
