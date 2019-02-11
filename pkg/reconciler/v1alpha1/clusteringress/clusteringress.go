@@ -17,12 +17,9 @@ limitations under the License.
 package clusteringress
 
 import (
-	"k8s.io/apimachinery/pkg/util/sets"
 	"context"
 	"fmt"
 	"reflect"
-	"sort"
-	"strings"
 	"sync"
 
 	"github.com/knative/pkg/apis/istio/v1alpha3"
@@ -43,6 +40,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrs "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/tools/cache"
 )
 
@@ -54,8 +52,6 @@ const (
 	controllerAgentName = "clusteringress-controller"
 
 	knativeServingNamespace = "knative-serving"
-
-	portNameSeparator = ":"
 )
 
 type configStore interface {
@@ -73,6 +69,8 @@ type Reconciler struct {
 	virtualServiceLister istiolisters.VirtualServiceLister
 	gatewayLister        istiolisters.GatewayLister
 	configStore          configStore
+
+	enableReconcilingGateway bool
 }
 
 // Check that our Reconciler implements controller.Reconciler
@@ -88,10 +86,11 @@ func NewController(
 ) *controller.Impl {
 
 	c := &Reconciler{
-		Base:                 reconciler.NewBase(opt, controllerAgentName),
-		clusterIngressLister: clusterIngressInformer.Lister(),
-		virtualServiceLister: virtualServiceInformer.Lister(),
-		gatewayLister:        gatewayInformer.Lister(),
+		Base:                     reconciler.NewBase(opt, controllerAgentName),
+		clusterIngressLister:     clusterIngressInformer.Lister(),
+		virtualServiceLister:     virtualServiceInformer.Lister(),
+		gatewayLister:            gatewayInformer.Lister(),
+		enableReconcilingGateway: false,
 	}
 	impl := controller.NewImpl(c, c.Logger, "ClusterIngresses", reconciler.MustNewStatsReporter("ClusterIngress", c.Logger))
 
@@ -141,7 +140,6 @@ func (c *Reconciler) Reconcile(ctx context.Context, key string) error {
 	// Get the ClusterIngress resource with this name.
 	original, err := c.clusterIngressLister.Get(name)
 	if apierrs.IsNotFound(err) {
-		// TODO(zhiminx): remove the gateway servers of the deleted clusteringress.
 		// The resource may no longer exist, in which case we stop processing.
 		logger.Errorf("clusteringress %q in work queue no longer exists", key)
 		return nil
@@ -209,14 +207,26 @@ func (c *Reconciler) reconcile(ctx context.Context, ci *v1alpha1.ClusterIngress)
 		return err
 	}
 
-	if err := c.configureGateways(ctx, ci, gatewayNames); err != nil {
-		return err
-	}
 	// As underlying network programming (VirtualService now) is stateless,
 	// here we simply mark the ingress as ready if the VirtualService
 	// is successfully synced.
 	ci.Status.MarkNetworkConfigured()
 	ci.Status.MarkLoadBalancerReady(getLBStatus(gatewayServiceURLFromContext(ctx, ci)))
+
+	// TODO(zhiminx): copy certificate secrets into the target namespaces that Istio gateway
+	// ingress (pods) are deployed so that Istio gateway could consume them.
+
+	// TODO(zhiminx): currently we turn off Gateway reconcilation as it relies
+	// on Istio 1.1, which is not ready.
+	// We should eventually use a feature flag (in ConfigMap) to turn this on/off.
+	if c.enableReconcilingGateway {
+		if err := c.reconcileGateways(ctx, ci, gatewayNames); err != nil {
+			return err
+		}
+	}
+
+	// TODO(zhiminx): Mark Route status to indicate that Gateway is configured.
+
 	logger.Info("ClusterIngress successfully synced")
 	return nil
 }
@@ -314,110 +324,42 @@ func (c *Reconciler) reconcileVirtualService(ctx context.Context, ci *v1alpha1.C
 	return nil
 }
 
-func (c *Reconciler) configureGateways(ctx context.Context, ci *v1alpha1.ClusterIngress, gatewayNames []string) error {
+func (c *Reconciler) reconcileGateways(ctx context.Context, ci *v1alpha1.ClusterIngress, gatewayNames []string) error {
 	for _, gatewayName := range gatewayNames {
-		if err := c.configureGateway(ctx, ci, gatewayName); err != nil {
+		if err := c.reconcileGateway(ctx, ci, gatewayName); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (c *Reconciler) configureGateway(ctx context.Context, ci *v1alpha1.ClusterIngress, gatewayName string) error {
+func (c *Reconciler) reconcileGateway(ctx context.Context, ci *v1alpha1.ClusterIngress, gatewayName string) error {
+	// TODO(zhiminx): Need to handle the scenario when deleting ClusterIngress.
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
+	logger := logging.FromContext(ctx)
 	gateway, err := c.gatewayLister.Gateways(knativeServingNamespace).Get(gatewayName)
 	if err != nil {
+		// Not like VirtualService, A default gateway needs to be existed.
+		// It should be installed when installing Knative.
+		logger.Error("Failed to get Gateway.", zap.Error(err))
 		return err
 	}
 
-	existingServers := getExistingServers(gateway, ci)
-	expectedServers := buildExpectedServers(ci)
+	existing := resources.GetServers(gateway, ci)
+	want := resources.MakeServers(ci)
 
-	if equality.Semantic.DeepEqual(existingServers, expectedServers) {
+	if equality.Semantic.DeepEqual(existing, want) {
 		return nil
 	}
 
-	updatedGateway := gateway.DeepCopy()
-	updatedGateway = updateGateway(updatedGateway, expectedServers, ci)
-	if _, err := c.SharedClientSet.NetworkingV1alpha3().Gateways(gateway.Namespace).Update(updatedGateway); err != nil {
+	copy := gateway.DeepCopy()
+	copy = resources.UpdateGateway(copy, want, ci)
+	if _, err := c.SharedClientSet.NetworkingV1alpha3().Gateways(copy.Namespace).Update(copy); err != nil {
+		logger.Error("Failed to update Gateway", zap.Error(err))
 		return err
 	}
+	c.Recorder.Eventf(ci, corev1.EventTypeNormal, "Updated",
+		"Updated status for Gateway %q/%q", gateway.Namespace, gateway.Name)
 	return nil
-}
-
-func getExistingServers(gateway *v1alpha3.Gateway, ci *v1alpha1.ClusterIngress) []v1alpha3.Server {
-	var servers []v1alpha3.Server
-	for i := range gateway.Spec.Servers {
-		// All of the servers of a clusteringress should have the same prefix of portname, which is the clusteringress name + ":".
-		if belongsToClusterIngress(&gateway.Spec.Servers[i], ci) {
-			servers = append(servers, gateway.Spec.Servers[i])
-		}
-	}
-	return sortServers(servers)
-
-}
-
-func buildExpectedServers(ci *v1alpha1.ClusterIngress) []v1alpha3.Server {
-	var servers []v1alpha3.Server
-	// TODO(zhiminx): for the hosts that does not included in the TLS but listed in the Rules,
-	// do we consider them as HTTP hosts?
-	for i := range ci.Spec.TLS {
-		tls := ci.Spec.TLS[i]
-		// Each TLS should only have one host according to Istio's restriction.
-		servers = append(servers, v1alpha3.Server{
-			Hosts: tls.Hosts[:1],
-			Port: v1alpha3.Port{
-				Name:     fmt.Sprintf("%s%s%s", ci.Name, portNameSeparator, tls.Hosts[0]),
-				Number:   443,
-				Protocol: "HTTPS",
-			},
-			TLS: &v1alpha3.TLSOptions{
-				Mode: v1alpha3.TLSModeSimple,
-			},
-		})
-	}
-	return sortServers(servers)
-}
-
-func updateGateway(gateway *v1alpha3.Gateway, newServers []v1alpha3.Server, ci *v1alpha1.ClusterIngress) *v1alpha3.Gateway {
-	var servers []v1alpha3.Server
-	for i := range gateway.Spec.Servers {
-		// We remove
-		//  1) the old servers belonging to the gateway
-		//  2) the default HTTP server and HTTPS server in the gateway because they are only used for the scenario of not reconciling gateway.
-		if belongsToClusterIngress(&gateway.Spec.Servers[i], ci) || isDefaultServer(&gateway.Spec.Servers[i]) {
-			continue
-		}
-		servers = append(servers, gateway.Spec.Servers[i])
-	}
-	servers = append(servers, newServers...)
-	sortServers(servers)
-	gateway.Spec.Servers = servers
-	return gateway
-}
-
-func sortServers(servers []v1alpha3.Server) []v1alpha3.Server {
-	sort.Slice(servers, func(i, j int) bool {
-		switch strings.Compare(servers[i].Port.Name, servers[j].Port.Name) {
-		case -1:
-			return true
-		case 1:
-			return false
-		}
-		return true
-	})
-	return servers
-}
-
-func belongsToClusterIngress(server *v1alpha3.Server, ci *v1alpha1.ClusterIngress) bool {
-	portNameSplits := strings.Split(server.Port.Name, portNameSeparator)
-	if len(portNameSplits) != 2 {
-		return false
-	}
-	return portNameSplits[0] == ci.Name
-}
-
-func isDefaultServer(server *v1alpha3.Server) bool {
-	return server.Port.Name == "http" || server.Port.Name == "https"
 }

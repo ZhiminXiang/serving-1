@@ -21,15 +21,6 @@ import (
 	"testing"
 	"time"
 
-	"golang.org/x/sync/errgroup"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/util/intstr"
-	kubeinformers "k8s.io/client-go/informers"
-	fakekubeclientset "k8s.io/client-go/kubernetes/fake"
-	clientgotesting "k8s.io/client-go/testing"
-
 	duckv1alpha1 "github.com/knative/pkg/apis/duck/v1alpha1"
 	"github.com/knative/pkg/apis/istio/v1alpha3"
 	fakesharedclientset "github.com/knative/pkg/client/clientset/versioned/fake"
@@ -48,6 +39,14 @@ import (
 	. "github.com/knative/serving/pkg/reconciler/v1alpha1/testing"
 	"github.com/knative/serving/pkg/system"
 	_ "github.com/knative/serving/pkg/system/testing"
+	"golang.org/x/sync/errgroup"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	kubeinformers "k8s.io/client-go/informers"
+	fakekubeclientset "k8s.io/client-go/kubernetes/fake"
+	clientgotesting "k8s.io/client-go/testing"
 )
 
 const (
@@ -204,14 +203,20 @@ func TestReconcile(t *testing.T) {
 
 	table.Test(t, MakeFactory(func(listers *Listers, opt reconciler.Options) controller.Reconciler {
 		return &Reconciler{
-			Base:                 reconciler.NewBase(opt, controllerAgentName),
-			virtualServiceLister: listers.GetVirtualServiceLister(),
-			clusterIngressLister: listers.GetClusterIngressLister(),
+			Base:                     reconciler.NewBase(opt, controllerAgentName),
+			virtualServiceLister:     listers.GetVirtualServiceLister(),
+			clusterIngressLister:     listers.GetClusterIngressLister(),
+			gatewayLister:            listers.GetGatewayLister(),
+			enableReconcilingGateway: false,
 			configStore: &testConfigStore{
 				config: ReconcilerTestConfig(),
 			},
 		}
 	}))
+}
+
+func TestReconcile_Gateway(t *testing.T) {
+
 }
 
 func addAnnotations(ing *v1alpha1.ClusterIngress, annos map[string]string) *v1alpha1.ClusterIngress {
@@ -317,6 +322,7 @@ func newTestSetup(t *testing.T, configs ...*corev1.ConfigMap) (
 		},
 		servingInformer.Networking().V1alpha1().ClusterIngresses(),
 		sharedInformer.Networking().V1alpha3().VirtualServices(),
+		sharedInformer.Networking().V1alpha3().Gateways(),
 	)
 
 	rclr = controller.Reconciler.(*Reconciler)
