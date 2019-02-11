@@ -21,6 +21,16 @@ import (
 	"log"
 	"time"
 
+	"k8s.io/client-go/dynamic"
+	kubeinformers "k8s.io/client-go/informers"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/tools/clientcmd"
+
+	// Uncomment the following line to load the gcp plugin (only required to authenticate against GKE clusters).
+	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
+
 	cachingclientset "github.com/knative/caching/pkg/client/clientset/versioned"
 	cachinginformers "github.com/knative/caching/pkg/client/informers/externalversions"
 	sharedclientset "github.com/knative/pkg/client/clientset/versioned"
@@ -42,13 +52,6 @@ import (
 	"github.com/knative/serving/pkg/reconciler/v1alpha1/service"
 	"github.com/knative/serving/pkg/system"
 	"go.uber.org/zap"
-	"k8s.io/client-go/dynamic"
-	kubeinformers "k8s.io/client-go/informers"
-	"k8s.io/client-go/kubernetes"
-	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
-	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/cache"
-	"k8s.io/client-go/tools/clientcmd" // Uncomment the following line to load the gcp plugin (only required to authenticate against GKE clusters).
 )
 
 const (
