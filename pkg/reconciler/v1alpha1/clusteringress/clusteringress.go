@@ -35,6 +35,7 @@ import (
 	"github.com/knative/serving/pkg/reconciler"
 	"github.com/knative/serving/pkg/reconciler/v1alpha1/clusteringress/config"
 	"github.com/knative/serving/pkg/reconciler/v1alpha1/clusteringress/resources"
+	"github.com/knative/serving/pkg/system"
 	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -50,8 +51,6 @@ const (
 	IstioIngressClassName = "istio.ingress.networking.knative.dev"
 
 	controllerAgentName = "clusteringress-controller"
-
-	knativeServingNamespace = "knative-serving"
 )
 
 type configStore interface {
@@ -312,6 +311,12 @@ func (c *Reconciler) reconcileVirtualService(ctx context.Context, ci *v1alpha1.C
 		// Don't modify the informers copy
 		existing := vs.DeepCopy()
 		existing.Spec = desired.Spec
+		v1, err := c.SharedClientSet.NetworkingV1alpha3().VirtualServices(ns).List(metav1.ListOptions{})
+		if err != nil {
+			logger.Error("Failed to list vs", zap.Error(err))
+		} else {
+			logger.Infof("All vs %v", v1)
+		}
 		_, err = c.SharedClientSet.NetworkingV1alpha3().VirtualServices(ns).Update(existing)
 		if err != nil {
 			logger.Error("Failed to update VirtualService", zap.Error(err))
@@ -338,7 +343,7 @@ func (c *Reconciler) reconcileGateway(ctx context.Context, ci *v1alpha1.ClusterI
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 	logger := logging.FromContext(ctx)
-	gateway, err := c.gatewayLister.Gateways(knativeServingNamespace).Get(gatewayName)
+	gateway, err := c.gatewayLister.Gateways(system.Namespace()).Get(gatewayName)
 	if err != nil {
 		// Not like VirtualService, A default gateway needs to be existed.
 		// It should be installed when installing Knative.
@@ -354,12 +359,18 @@ func (c *Reconciler) reconcileGateway(ctx context.Context, ci *v1alpha1.ClusterI
 	}
 
 	copy := gateway.DeepCopy()
-	copy = resources.UpdateGateway(copy, want, ci)
+	copy = resources.UpdateGateway(copy, want, existing)
+	gateways, err := c.SharedClientSet.NetworkingV1alpha3().Gateways(copy.Namespace).List(metav1.ListOptions{})
+	if err != nil {
+		logger.Error("Failed to list vs", zap.Error(err))
+	} else {
+		logger.Infof("All vs %v", gateways)
+	}
 	if _, err := c.SharedClientSet.NetworkingV1alpha3().Gateways(copy.Namespace).Update(copy); err != nil {
 		logger.Error("Failed to update Gateway", zap.Error(err))
 		return err
 	}
 	c.Recorder.Eventf(ci, corev1.EventTypeNormal, "Updated",
-		"Updated status for Gateway %q/%q", gateway.Namespace, gateway.Name)
+		"Updated Gateway %q/%q", gateway.Namespace, gateway.Name)
 	return nil
 }

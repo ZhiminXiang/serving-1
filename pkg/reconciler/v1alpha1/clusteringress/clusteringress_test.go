@@ -90,6 +90,14 @@ var (
 			},
 		},
 	}}
+
+	ingressTLS = []v1alpha1.ClusterIngressTLS{{
+		Hosts:             []string{"host-tls.example.com"},
+		SecretName:        "secret0",
+		SecretNamespace:   "istio-system",
+		ServerCertificate: "tls.crt",
+		PrivateKey:        "tls.key",
+	}}
 )
 
 // This is heavily based on the way the OpenShift Ingress controller tests its reconciliation method.
@@ -216,7 +224,122 @@ func TestReconcile(t *testing.T) {
 }
 
 func TestReconcile_Gateway(t *testing.T) {
+	table := TableTest{{
+		Name:                    "update Gateway to match newly created ClusterIngress",
+		SkipNamespaceValidation: true,
+		Objects: []runtime.Object{
+			ingressWithTLS("new-created-clusteringress", 1234, ingressTLS),
+			// No Gateway servers match the given TLS of ClusterIngress.
+			gateway("knative-ingress-gateway", system.Namespace(), "test:0", "test.example.com"),
+			gateway("knative-shared-gateway", system.Namespace(), "test:0", "test.example.com"),
+		},
+		WantCreates: []metav1.Object{
+			resources.MakeVirtualService(ingress("new-created-clusteringress", 1234),
+				[]string{"knative-shared-gateway", "knative-ingress-gateway"}),
+		},
+		WantUpdates: []clientgotesting.UpdateActionImpl{{
+			Object: gatewayWithServers("knative-shared-gateway", system.Namespace(), []v1alpha3.Server{
+				{
+					// The server created by new ClusterIngressTLS.
+					Hosts: []string{"host-tls.example.com"},
+					Port: v1alpha3.Port{
+						Name:     "new-created-clusteringress:0",
+						Number:   443,
+						Protocol: v1alpha3.ProtocolHTTPS,
+					},
+					TLS: &v1alpha3.TLSOptions{
+						Mode:              v1alpha3.TLSModeSimple,
+						ServerCertificate: "tls.crt",
+						PrivateKey:        "tls.key",
+					},
+				}, {
+					// The server orginally existed in the Gateway.
+					Hosts: []string{"test.example.com"},
+					Port: v1alpha3.Port{
+						Name:     "test:0",
+						Number:   443,
+						Protocol: v1alpha3.ProtocolHTTPS,
+					},
+					TLS: &v1alpha3.TLSOptions{
+						Mode:              v1alpha3.TLSModeSimple,
+						ServerCertificate: "tls.crt",
+						PrivateKey:        "tls.key",
+					},
+				},
+			}),
+		}},
+		WantStatusUpdates: []clientgotesting.UpdateActionImpl{{
+			Object: ingressWithTLSAndStatus("new-created-clusteringress", 1234, ingressTLS,
+				v1alpha1.IngressStatus{
+					LoadBalancer: &v1alpha1.LoadBalancerStatus{
+						Ingress: []v1alpha1.LoadBalancerIngressStatus{
+							{DomainInternal: reconciler.GetK8sServiceFullname("knative-ingressgateway", "istio-system")},
+						},
+					},
+					Conditions: duckv1alpha1.Conditions{{
+						Type:     v1alpha1.ClusterIngressConditionLoadBalancerReady,
+						Status:   corev1.ConditionTrue,
+						Severity: duckv1alpha1.ConditionSeverityError,
+					}, {
+						Type:     v1alpha1.ClusterIngressConditionNetworkConfigured,
+						Status:   corev1.ConditionTrue,
+						Severity: duckv1alpha1.ConditionSeverityError,
+					}, {
+						Type:     v1alpha1.ClusterIngressConditionReady,
+						Status:   corev1.ConditionTrue,
+						Severity: duckv1alpha1.ConditionSeverityError,
+					}},
+				},
+			),
+		}},
+		WantEvents: []string{
+			Eventf(corev1.EventTypeNormal, "Created", "Created VirtualService %q", "new-created-clusteringress"),
+			Eventf(corev1.EventTypeNormal, "Updated", "Updated Gateway %q/%q", system.Namespace(), "knative-shared-gateway"),
+			Eventf(corev1.EventTypeNormal, "Updated", "Updated Gateway %q/%q", system.Namespace(), "knative-ingress-gateway"),
+		},
+		Key: "new-created-clusteringress",
+	}}
+	table.Test(t, MakeFactory(func(listers *Listers, opt reconciler.Options) controller.Reconciler {
+		return &Reconciler{
+			Base:                 reconciler.NewBase(opt, controllerAgentName),
+			virtualServiceLister: listers.GetVirtualServiceLister(),
+			clusterIngressLister: listers.GetClusterIngressLister(),
+			gatewayLister:        listers.GetGatewayLister(),
+			// Enable reconciling gateway.
+			enableReconcilingGateway: true,
+			configStore: &testConfigStore{
+				config: ReconcilerTestConfig(),
+			},
+		}
+	}))
+}
 
+func gateway(name, namespace, portName, host string) *v1alpha3.Gateway {
+	return gatewayWithServers(name, namespace, []v1alpha3.Server{{
+		Hosts: []string{host},
+		Port: v1alpha3.Port{
+			Name:     portName,
+			Number:   443,
+			Protocol: v1alpha3.ProtocolHTTPS,
+		},
+		TLS: &v1alpha3.TLSOptions{
+			Mode:              v1alpha3.TLSModeSimple,
+			ServerCertificate: "tls.crt",
+			PrivateKey:        "tls.key",
+		},
+	}})
+}
+
+func gatewayWithServers(name, namespace string, servers []v1alpha3.Server) *v1alpha3.Gateway {
+	return &v1alpha3.Gateway{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: v1alpha3.GatewaySpec{
+			Servers: servers,
+		},
+	}
 }
 
 func addAnnotations(ing *v1alpha1.ClusterIngress, annos map[string]string) *v1alpha1.ClusterIngress {
@@ -275,6 +398,16 @@ func ingressWithStatus(name string, generation int64, status v1alpha1.IngressSta
 
 func ingress(name string, generation int64) *v1alpha1.ClusterIngress {
 	return ingressWithStatus(name, generation, v1alpha1.IngressStatus{})
+}
+
+func ingressWithTLS(name string, generation int64, tls []v1alpha1.ClusterIngressTLS) *v1alpha1.ClusterIngress {
+	return ingressWithTLSAndStatus(name, generation, tls, v1alpha1.IngressStatus{})
+}
+
+func ingressWithTLSAndStatus(name string, generation int64, tls []v1alpha1.ClusterIngressTLS, status v1alpha1.IngressStatus) *v1alpha1.ClusterIngress {
+	ci := ingressWithStatus(name, generation, status)
+	ci.Spec.TLS = tls
+	return ci
 }
 
 func newTestSetup(t *testing.T, configs ...*corev1.ConfigMap) (

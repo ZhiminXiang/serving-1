@@ -29,7 +29,7 @@ const portNameSeparator = ":"
 
 // GetServers gets the `Servers` from `Gateway` that belongs to the given ClusterIngress.
 func GetServers(gateway *v1alpha3.Gateway, ci *v1alpha1.ClusterIngress) []v1alpha3.Server {
-	var servers []v1alpha3.Server
+	servers := []v1alpha3.Server{}
 	for i := range gateway.Spec.Servers {
 		if belongsToClusterIngress(&gateway.Spec.Servers[i], ci) {
 			servers = append(servers, gateway.Spec.Servers[i])
@@ -64,7 +64,7 @@ func sortServers(servers []v1alpha3.Server) []v1alpha3.Server {
 // MakeServers creates the expected Gateway `Servers` according to the given
 // ClusterIngress.
 func MakeServers(ci *v1alpha1.ClusterIngress) []v1alpha3.Server {
-	var servers []v1alpha3.Server
+	servers := []v1alpha3.Server{}
 	// TODO(zhiminx): for the hosts that does not included in the ClusterIngressTLS but listed in the ClusterIngressRule,
 	// do we consider them as hosts for HTTP?
 	for i := range ci.Spec.TLS {
@@ -88,15 +88,20 @@ func MakeServers(ci *v1alpha1.ClusterIngress) []v1alpha3.Server {
 	return sortServers(servers)
 }
 
-// UpdateGateway replaces the existing servers belonging to the give ClusterIngress with
-// the wanted servers.
-func UpdateGateway(gateway *v1alpha3.Gateway, want []v1alpha3.Server, ci *v1alpha1.ClusterIngress) *v1alpha3.Gateway {
-	var servers []v1alpha3.Server
+// UpdateGateway replaces the existing servers with the wanted servers.
+func UpdateGateway(gateway *v1alpha3.Gateway, want []v1alpha3.Server, existing []v1alpha3.Server) *v1alpha3.Gateway {
+	existingServers := make(map[string]*v1alpha3.Server)
+	for i := range existing {
+		existingServers[existing[i].Port.Name] = &existing[i]
+	}
+
+	servers := []v1alpha3.Server{}
 	for i := range gateway.Spec.Servers {
 		// We remove
-		//  1) the old servers belonging to the gateway
+		//  1) the existing servers
 		//  2) the default HTTP server and HTTPS server in the gateway because they are only used for the scenario of not reconciling gateway.
-		if belongsToClusterIngress(&gateway.Spec.Servers[i], ci) || isDefaultServer(&gateway.Spec.Servers[i]) {
+		_, ok := existingServers[gateway.Spec.Servers[i].Port.Name]
+		if ok || isDefaultServer(&gateway.Spec.Servers[i]) {
 			continue
 		}
 		servers = append(servers, gateway.Spec.Servers[i])
