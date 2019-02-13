@@ -98,6 +98,36 @@ var (
 		ServerCertificate: "tls.crt",
 		PrivateKey:        "tls.key",
 	}}
+
+	// The gateway server according to ingressTLS.
+	ingressTLSServer = v1alpha3.Server{
+		Hosts: []string{"host-tls.example.com"},
+		Port: v1alpha3.Port{
+			Name:     "new-created-clusteringress:0",
+			Number:   443,
+			Protocol: v1alpha3.ProtocolHTTPS,
+		},
+		TLS: &v1alpha3.TLSOptions{
+			Mode:              v1alpha3.TLSModeSimple,
+			ServerCertificate: "tls.crt",
+			PrivateKey:        "tls.key",
+		},
+	}
+
+	// The gateway server irrelevant to ingressTLS.
+	irrelevanteServer = v1alpha3.Server{
+		Hosts: []string{"test.example.com"},
+		Port: v1alpha3.Port{
+			Name:     "test:0",
+			Number:   443,
+			Protocol: v1alpha3.ProtocolHTTPS,
+		},
+		TLS: &v1alpha3.TLSOptions{
+			Mode:              v1alpha3.TLSModeSimple,
+			ServerCertificate: "tls.crt",
+			PrivateKey:        "tls.key",
+		},
+	}
 )
 
 // This is heavily based on the way the OpenShift Ingress controller tests its reconciliation method.
@@ -230,67 +260,18 @@ func TestReconcile_Gateway(t *testing.T) {
 		Objects: []runtime.Object{
 			ingressWithTLS("new-created-clusteringress", 1234, ingressTLS),
 			// No Gateway servers match the given TLS of ClusterIngress.
-			gateway("knative-ingress-gateway", system.Namespace(), "test:0", "test.example.com"),
-			gateway("knative-shared-gateway", system.Namespace(), "test:0", "test.example.com"),
+			gateway("knative-ingress-gateway", system.Namespace(), []v1alpha3.Server{irrelevanteServer}),
+			gateway("knative-shared-gateway", system.Namespace(), []v1alpha3.Server{irrelevanteServer}),
 		},
 		WantCreates: []metav1.Object{
 			resources.MakeVirtualService(ingress("new-created-clusteringress", 1234),
 				[]string{"knative-shared-gateway", "knative-ingress-gateway"}),
 		},
 		WantUpdates: []clientgotesting.UpdateActionImpl{{
-			Object: gatewayWithServers("knative-shared-gateway", system.Namespace(), []v1alpha3.Server{
-				{
-					// The server created by new ClusterIngressTLS.
-					Hosts: []string{"host-tls.example.com"},
-					Port: v1alpha3.Port{
-						Name:     "new-created-clusteringress:0",
-						Number:   443,
-						Protocol: v1alpha3.ProtocolHTTPS,
-					},
-					TLS: &v1alpha3.TLSOptions{
-						Mode:              v1alpha3.TLSModeSimple,
-						ServerCertificate: "tls.crt",
-						PrivateKey:        "tls.key",
-					},
-				}, {
-					// The server orginally existed in the Gateway.
-					Hosts: []string{"test.example.com"},
-					Port: v1alpha3.Port{
-						Name:     "test:0",
-						Number:   443,
-						Protocol: v1alpha3.ProtocolHTTPS,
-					},
-					TLS: &v1alpha3.TLSOptions{
-						Mode:              v1alpha3.TLSModeSimple,
-						ServerCertificate: "tls.crt",
-						PrivateKey:        "tls.key",
-					},
-				},
-			}),
-		}},
-		WantStatusUpdates: []clientgotesting.UpdateActionImpl{{
-			Object: ingressWithTLSAndStatus("new-created-clusteringress", 1234, ingressTLS,
-				v1alpha1.IngressStatus{
-					LoadBalancer: &v1alpha1.LoadBalancerStatus{
-						Ingress: []v1alpha1.LoadBalancerIngressStatus{
-							{DomainInternal: reconciler.GetK8sServiceFullname("knative-ingressgateway", "istio-system")},
-						},
-					},
-					Conditions: duckv1alpha1.Conditions{{
-						Type:     v1alpha1.ClusterIngressConditionLoadBalancerReady,
-						Status:   corev1.ConditionTrue,
-						Severity: duckv1alpha1.ConditionSeverityError,
-					}, {
-						Type:     v1alpha1.ClusterIngressConditionNetworkConfigured,
-						Status:   corev1.ConditionTrue,
-						Severity: duckv1alpha1.ConditionSeverityError,
-					}, {
-						Type:     v1alpha1.ClusterIngressConditionReady,
-						Status:   corev1.ConditionTrue,
-						Severity: duckv1alpha1.ConditionSeverityError,
-					}},
-				},
-			),
+			// ingressTLSServer needs to be added into Gateway.
+			Object: gateway("knative-shared-gateway", system.Namespace(), []v1alpha3.Server{irrelevanteServer, ingressTLSServer}),
+		}, {
+			Object: gateway("knative-ingress-gateway", system.Namespace(), []v1alpha3.Server{irrelevanteServer, ingressTLSServer}),
 		}},
 		WantEvents: []string{
 			Eventf(corev1.EventTypeNormal, "Created", "Created VirtualService %q", "new-created-clusteringress"),
@@ -314,23 +295,7 @@ func TestReconcile_Gateway(t *testing.T) {
 	}))
 }
 
-func gateway(name, namespace, portName, host string) *v1alpha3.Gateway {
-	return gatewayWithServers(name, namespace, []v1alpha3.Server{{
-		Hosts: []string{host},
-		Port: v1alpha3.Port{
-			Name:     portName,
-			Number:   443,
-			Protocol: v1alpha3.ProtocolHTTPS,
-		},
-		TLS: &v1alpha3.TLSOptions{
-			Mode:              v1alpha3.TLSModeSimple,
-			ServerCertificate: "tls.crt",
-			PrivateKey:        "tls.key",
-		},
-	}})
-}
-
-func gatewayWithServers(name, namespace string, servers []v1alpha3.Server) *v1alpha3.Gateway {
+func gateway(name, namespace string, servers []v1alpha3.Server) *v1alpha3.Gateway {
 	return &v1alpha3.Gateway{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
