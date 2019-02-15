@@ -18,10 +18,12 @@ package clusteringress
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"sync"
 
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 
 	"github.com/knative/pkg/apis/istio/v1alpha3"
@@ -49,6 +51,16 @@ import (
 
 const (
 	controllerAgentName = "clusteringress-controller"
+)
+
+// clusterIngressFinalizer is the name that we put into the resource finalizer list, e.g.
+//  metadata:
+//    finalizers:
+//    - clusteringresses.networking.internal.knative.dev
+var (
+	//
+	clusterIngressResource  = v1alpha1.Resource("ClusterIngress")
+	clusterIngressFinalizer = clusterIngressResource.String()
 )
 
 type configStore interface {
@@ -186,7 +198,7 @@ func (c *Reconciler) updateStatus(desired *v1alpha1.ClusterIngress) (*v1alpha1.C
 func (c *Reconciler) reconcile(ctx context.Context, ci *v1alpha1.ClusterIngress) error {
 	logger := logging.FromContext(ctx)
 	if ci.GetDeletionTimestamp() != nil {
-		return nil
+		return c.reconcileDeletion(ctx, ci)
 	}
 
 	// We may be reading a version of the object that was stored at an older version
@@ -221,8 +233,15 @@ func (c *Reconciler) reconcile(ctx context.Context, ci *v1alpha1.ClusterIngress)
 	// TODO(zhiminx): currently we turn off Gateway reconciliation as it relies
 	// on Istio 1.1, which is not ready.
 	// We should eventually use a feature flag (in ConfigMap) to turn this on/off.
+
 	if c.enableReconcilingGateway {
-		if err := c.reconcileGateways(ctx, ci, gatewayNames); err != nil {
+		// Add the finalizer before adding `Servers` into Gateway so that we can be sure
+		// the `Servers` get cleaned up from Gateway.
+		if err := c.ensureFinalizer(ci); err != nil {
+			return err
+		}
+
+		if err := c.reconcileGateways(ctx, ci, gatewayNames, false); err != nil {
 			return err
 		}
 	}
@@ -326,18 +345,61 @@ func (c *Reconciler) reconcileVirtualService(ctx context.Context, ci *v1alpha1.C
 	return nil
 }
 
-func (c *Reconciler) reconcileGateways(ctx context.Context, ci *v1alpha1.ClusterIngress, gatewayNames []string) error {
+func (c *Reconciler) ensureFinalizer(ci *v1alpha1.ClusterIngress) error {
+	finalizers := sets.NewString(ci.Finalizers...)
+	if finalizers.Has(clusterIngressFinalizer) {
+		return nil
+	}
+	finalizers.Insert(clusterIngressFinalizer)
+
+	mergePatch := map[string]interface{}{
+		"metadata": map[string]interface{}{
+			"finalizers": finalizers.List(),
+		},
+	}
+
+	patch, err := json.Marshal(mergePatch)
+	if err != nil {
+		return err
+	}
+
+	_, err = c.ServingClientSet.NetworkingV1alpha1().ClusterIngresses().Patch(ci.Name, types.MergePatchType, patch)
+	return err
+}
+
+func (c *Reconciler) reconcileDeletion(ctx context.Context, ci *v1alpha1.ClusterIngress) error {
+	logger := logging.FromContext(ctx)
+
+	// If our Finalizer is first, delete the `Servers` from Gateway for this ClusterIngress,
+	// and remove the finalizer.
+	if len(ci.Finalizers) == 0 || ci.Finalizers[0] != clusterIngressFinalizer {
+		return nil
+	}
+
+	gatewayNames := gatewayNamesFromContext(ctx, ci)
+	// Delete the Servers from Gateway for this ClusterIngress.
+	logger.Info("Cleaning up Gateway Servers")
+	if err := c.reconcileGateways(ctx, ci, gatewayNames, true); err != nil {
+		return err
+	}
+
+	// Update the Route to remove the Finalizer.
+	logger.Info("Removing Finalizer")
+	ci.Finalizers = ci.Finalizers[1:]
+	_, err := c.ServingClientSet.NetworkingV1alpha1().ClusterIngresses().Update(ci)
+	return err
+}
+
+func (c *Reconciler) reconcileGateways(ctx context.Context, ci *v1alpha1.ClusterIngress, gatewayNames []string, deletesClusterIngress bool) error {
 	for _, gatewayName := range gatewayNames {
-		if err := c.reconcileGateway(ctx, ci, gatewayName); err != nil {
+		if err := c.reconcileGateway(ctx, ci, gatewayName, deletesClusterIngress); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (c *Reconciler) reconcileGateway(ctx context.Context, ci *v1alpha1.ClusterIngress, gatewayName string) error {
-	// TODO(zhiminx): Need to handle the scenario when deleting ClusterIngress.
-
+func (c *Reconciler) reconcileGateway(ctx context.Context, ci *v1alpha1.ClusterIngress, gatewayName string, deletesClusterIngress bool) error {
 	// We need to hold a lock to do read-modify-write operation for Istio Gateway because it is a
 	// global resource across all of ClusterIngresses. So the Istio Gateway should only be updated
 	// by a single thread.
@@ -353,7 +415,10 @@ func (c *Reconciler) reconcileGateway(ctx context.Context, ci *v1alpha1.ClusterI
 	}
 
 	existing := resources.GetServers(gateway, ci)
-	want := resources.MakeServers(ci)
+	want := []v1alpha3.Server{}
+	if !deletesClusterIngress {
+		want = resources.MakeServers(ci)
+	}
 
 	if equality.Semantic.DeepEqual(existing, want) {
 		return nil
