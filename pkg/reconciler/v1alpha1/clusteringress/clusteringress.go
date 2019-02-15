@@ -59,7 +59,7 @@ const (
 //    - clusteringresses.networking.internal.knative.dev
 var (
 	//
-	clusterIngressResource  = v1alpha1.Resource("ClusterIngress")
+	clusterIngressResource  = v1alpha1.Resource("clusteringresses")
 	clusterIngressFinalizer = clusterIngressResource.String()
 )
 
