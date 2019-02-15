@@ -33,7 +33,7 @@ var placeholderServer = v1alpha3.Server{
 	Hosts: []string{"place-holder.place-holder"},
 	Port: v1alpha3.Port{
 		Name:     "place-holder",
-		Number:   999999,
+		Number:   9999,
 		Protocol: v1alpha3.ProtocolHTTP,
 	},
 }
