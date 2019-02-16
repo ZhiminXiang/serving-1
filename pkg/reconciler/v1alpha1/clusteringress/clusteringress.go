@@ -354,7 +354,8 @@ func (c *Reconciler) ensureFinalizer(ci *v1alpha1.ClusterIngress) error {
 
 	mergePatch := map[string]interface{}{
 		"metadata": map[string]interface{}{
-			"finalizers": finalizers.List(),
+			"finalizers":      finalizers.List(),
+			"resourceVersion": ci.ResourceVersion,
 		},
 	}
 
