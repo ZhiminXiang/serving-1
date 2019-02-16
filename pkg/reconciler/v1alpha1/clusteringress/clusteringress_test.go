@@ -105,7 +105,7 @@ var (
 	ingressTLSServer = v1alpha3.Server{
 		Hosts: []string{"host-tls.example.com"},
 		Port: v1alpha3.Port{
-			Name:     "new-created-clusteringress:0",
+			Name:     "reconciling-clusteringress:0",
 			Number:   443,
 			Protocol: v1alpha3.ProtocolHTTPS,
 		},
@@ -260,35 +260,31 @@ func TestReconcile_Gateway(t *testing.T) {
 		Name:                    "update Gateway to match newly created ClusterIngress",
 		SkipNamespaceValidation: true,
 		Objects: []runtime.Object{
-			ingressWithTLS("new-created-clusteringress", 1234, ingressTLS),
+			ingressWithTLS("reconciling-clusteringress", 1234, ingressTLS),
 			// No Gateway servers match the given TLS of ClusterIngress.
 			gateway("knative-ingress-gateway", system.Namespace(), []v1alpha3.Server{irrelevanteServer}),
-			gateway("knative-shared-gateway", system.Namespace(), []v1alpha3.Server{irrelevanteServer}),
 		},
 		WantCreates: []metav1.Object{
 			// The creation of gateways are triggered when setting up the test.
 			gateway("knative-ingress-gateway", system.Namespace(), []v1alpha3.Server{irrelevanteServer}),
-			gateway("knative-shared-gateway", system.Namespace(), []v1alpha3.Server{irrelevanteServer}),
 
-			resources.MakeVirtualService(ingress("new-created-clusteringress", 1234),
-				[]string{"knative-shared-gateway", "knative-ingress-gateway"}),
+			resources.MakeVirtualService(ingress("reconciling-clusteringress", 1234),
+				[]string{"knative-ingress-gateway"}),
 		},
 		WantUpdates: []clientgotesting.UpdateActionImpl{{
 			// ingressTLSServer needs to be added into Gateway.
-			Object: gateway("knative-shared-gateway", system.Namespace(), []v1alpha3.Server{ingressTLSServer, irrelevanteServer}),
-		}, {
 			Object: gateway("knative-ingress-gateway", system.Namespace(), []v1alpha3.Server{ingressTLSServer, irrelevanteServer}),
 		}},
 		WantPatches: []clientgotesting.PatchActionImpl{
-			patchAddFinalizerAction("new-created-clusteringress", clusterIngressFinalizer),
+			patchAddFinalizerAction("reconciling-clusteringress", clusterIngressFinalizer),
 		},
 		WantStatusUpdates: []clientgotesting.UpdateActionImpl{{
-			Object: ingressWithTLSAndStatus("new-created-clusteringress", 1234,
+			Object: ingressWithTLSAndStatus("reconciling-clusteringress", 1234,
 				ingressTLS,
 				v1alpha1.IngressStatus{
 					LoadBalancer: &v1alpha1.LoadBalancerStatus{
 						Ingress: []v1alpha1.LoadBalancerIngressStatus{
-							{DomainInternal: reconciler.GetK8sServiceFullname("knative-ingressgateway", "istio-system")},
+							{DomainInternal: reconciler.GetK8sServiceFullname("istio-ingressgateway", "istio-system")},
 						},
 					},
 					Conditions: duckv1alpha1.Conditions{{
@@ -308,31 +304,30 @@ func TestReconcile_Gateway(t *testing.T) {
 			),
 		}},
 		WantEvents: []string{
-			Eventf(corev1.EventTypeNormal, "Created", "Created VirtualService %q", "new-created-clusteringress"),
-			Eventf(corev1.EventTypeNormal, "Updated", "Updated Gateway %q/%q", system.Namespace(), "knative-shared-gateway"),
+			Eventf(corev1.EventTypeNormal, "Created", "Created VirtualService %q", "reconciling-clusteringress"),
 			Eventf(corev1.EventTypeNormal, "Updated", "Updated Gateway %q/%q", system.Namespace(), "knative-ingress-gateway"),
 		},
-		Key: "new-created-clusteringress",
+		Key: "reconciling-clusteringress",
 	}, {
 		Name:                    "No preinstalled Gateways",
 		SkipNamespaceValidation: true,
 		Objects: []runtime.Object{
-			ingressWithTLS("new-created-clusteringress", 1234, ingressTLS),
+			ingressWithTLS("reconciling-clusteringress", 1234, ingressTLS),
 		},
 		WantCreates: []metav1.Object{
-			resources.MakeVirtualService(ingress("new-created-clusteringress", 1234),
-				[]string{"knative-shared-gateway", "knative-ingress-gateway"}),
+			resources.MakeVirtualService(ingress("reconciling-clusteringress", 1234),
+				[]string{"knative-ingress-gateway"}),
 		},
 		WantPatches: []clientgotesting.PatchActionImpl{
-			patchAddFinalizerAction("new-created-clusteringress", clusterIngressFinalizer),
+			patchAddFinalizerAction("reconciling-clusteringress", clusterIngressFinalizer),
 		},
 		WantStatusUpdates: []clientgotesting.UpdateActionImpl{{
-			Object: ingressWithTLSAndStatus("new-created-clusteringress", 1234,
+			Object: ingressWithTLSAndStatus("reconciling-clusteringress", 1234,
 				ingressTLS,
 				v1alpha1.IngressStatus{
 					LoadBalancer: &v1alpha1.LoadBalancerStatus{
 						Ingress: []v1alpha1.LoadBalancerIngressStatus{
-							{DomainInternal: reconciler.GetK8sServiceFullname("knative-ingressgateway", "istio-system")},
+							{DomainInternal: reconciler.GetK8sServiceFullname("istio-ingressgateway", "istio-system")},
 						},
 					},
 					Conditions: duckv1alpha1.Conditions{{
@@ -352,35 +347,32 @@ func TestReconcile_Gateway(t *testing.T) {
 			),
 		}},
 		WantEvents: []string{
-			Eventf(corev1.EventTypeNormal, "Created", "Created VirtualService %q", "new-created-clusteringress"),
+			Eventf(corev1.EventTypeNormal, "Created", "Created VirtualService %q", "reconciling-clusteringress"),
 		},
 		// Error should be returned when there is no preinstalled gateways.
 		WantErr: true,
-		Key:     "new-created-clusteringress",
+		Key:     "reconciling-clusteringress",
 	}, {
 		Name:                    "delete ClusterIngress",
 		SkipNamespaceValidation: true,
 		Objects: []runtime.Object{
-			ingressTobeDeleted("clusteringress-to-be-deleted", 1234, ingressTLS),
+			ingressWithFinalizers("reconciling-clusteringress", 1234, ingressTLS, []string{clusterIngressFinalizer}),
 			gateway("knative-ingress-gateway", system.Namespace(), []v1alpha3.Server{irrelevanteServer, ingressTLSServer}),
-			gateway("knative-shared-gateway", system.Namespace(), []v1alpha3.Server{irrelevanteServer, ingressTLSServer}),
 		},
 		WantCreates: []metav1.Object{
 			// The creation of gateways are triggered when setting up the test.
 			gateway("knative-ingress-gateway", system.Namespace(), []v1alpha3.Server{irrelevanteServer, ingressTLSServer}),
-			gateway("knative-shared-gateway", system.Namespace(), []v1alpha3.Server{irrelevanteServer, ingressTLSServer}),
 		},
 		WantUpdates: []clientgotesting.UpdateActionImpl{{
-			// ingressTLSServer should be deleted.
-			Object: gateway("knative-shared-gateway", system.Namespace(), []v1alpha3.Server{irrelevanteServer}),
-		}, {
 			Object: gateway("knative-ingress-gateway", system.Namespace(), []v1alpha3.Server{irrelevanteServer}),
+		}, {
+			// Finalizer should be removed.
+			Object: ingressWithFinalizers("reconciling-clusteringress", 1234, ingressTLS, []string{}),
 		}},
 		WantEvents: []string{
-			Eventf(corev1.EventTypeNormal, "Updated", "Updated Gateway %q/%q", system.Namespace(), "knative-shared-gateway"),
 			Eventf(corev1.EventTypeNormal, "Updated", "Updated Gateway %q/%q", system.Namespace(), "knative-ingress-gateway"),
 		},
-		Key: "clusteringress-to-be-deleted",
+		Key: "reconciling-clusteringress",
 	}}
 	table.Test(t, MakeFactory(func(listers *Listers, opt reconciler.Options) controller.Reconciler {
 
@@ -401,7 +393,14 @@ func TestReconcile_Gateway(t *testing.T) {
 			// Enable reconciling gateway.
 			enableReconcilingGateway: true,
 			configStore: &testConfigStore{
-				config: ReconcilerTestConfig(),
+				config: &config.Config{
+					Istio: &config.Istio{
+						IngressGateways: []config.Gateway{{
+							GatewayName: "knative-ingress-gateway",
+							ServiceURL:  reconciler.GetK8sServiceFullname("istio-ingressgateway", "istio-system"),
+						}},
+					},
+				},
 			},
 		}
 	}))
@@ -496,9 +495,9 @@ func ingress(name string, generation int64) *v1alpha1.ClusterIngress {
 	return ingressWithStatus(name, generation, v1alpha1.IngressStatus{})
 }
 
-func ingressTobeDeleted(name string, generation int64, tls []v1alpha1.ClusterIngressTLS) *v1alpha1.ClusterIngress {
+func ingressWithFinalizers(name string, generation int64, tls []v1alpha1.ClusterIngressTLS, finalizers []string) *v1alpha1.ClusterIngress {
 	ingress := ingressWithTLS(name, generation, tls)
-	ingress.ObjectMeta.Finalizers = []string{clusterIngressFinalizer}
+	ingress.ObjectMeta.Finalizers = finalizers
 	t := metav1.NewTime(time.Unix(1e9, 0))
 	ingress.ObjectMeta.DeletionTimestamp = &t
 	return ingress
