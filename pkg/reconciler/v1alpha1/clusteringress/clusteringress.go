@@ -93,11 +93,10 @@ func NewController(
 ) *controller.Impl {
 
 	c := &Reconciler{
-		Base:                     reconciler.NewBase(opt, controllerAgentName),
-		clusterIngressLister:     clusterIngressInformer.Lister(),
-		virtualServiceLister:     virtualServiceInformer.Lister(),
-		gatewayLister:            gatewayInformer.Lister(),
-		enableReconcilingGateway: false,
+		Base:                 reconciler.NewBase(opt, controllerAgentName),
+		clusterIngressLister: clusterIngressInformer.Lister(),
+		virtualServiceLister: virtualServiceInformer.Lister(),
+		gatewayLister:        gatewayInformer.Lister(),
 	}
 	impl := controller.NewImpl(c, c.Logger, "ClusterIngresses", reconciler.MustNewStatsReporter("ClusterIngress", c.Logger))
 
@@ -229,7 +228,7 @@ func (c *Reconciler) reconcile(ctx context.Context, ci *v1alpha1.ClusterIngress)
 	// on Istio 1.1, which is not ready.
 	// We should eventually use a feature flag (in ConfigMap) to turn this on/off.
 
-	if c.enableReconcilingGateway {
+	if enableReconcilingGateway(ctx) {
 		// Add the finalizer before adding `Servers` into Gateway so that we can be sure
 		// the `Servers` get cleaned up from Gateway.
 		if err := c.ensureFinalizer(ci); err != nil {
@@ -246,6 +245,10 @@ func (c *Reconciler) reconcile(ctx context.Context, ci *v1alpha1.ClusterIngress)
 
 	logger.Info("ClusterIngress successfully synced")
 	return nil
+}
+
+func enableReconcilingGateway(ctx context.Context) bool {
+	return config.FromContext(ctx).TLS.EnableAutoTLS
 }
 
 func getLBStatus(gatewayServiceURL string) []v1alpha1.LoadBalancerIngressStatus {
