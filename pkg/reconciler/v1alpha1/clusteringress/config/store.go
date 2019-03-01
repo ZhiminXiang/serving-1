@@ -20,14 +20,16 @@ import (
 	"context"
 
 	"github.com/knative/pkg/configmap"
+	"github.com/knative/serving/pkg/tls"
 )
 
 type cfgKey struct{}
 
-// Config of Istio.
+// Config of ClusterIngress.
 // +k8s:deepcopy-gen=false
 type Config struct {
 	Istio *Istio
+	TLS   *tls.Config
 }
 
 // FromContext fetch config from context.
@@ -62,6 +64,7 @@ func NewStore(logger configmap.Logger, onAfterStore ...func(name string, value i
 			logger,
 			configmap.Constructors{
 				IstioConfigName: NewIstioFromConfigMap,
+				tls.ConfigName:  tls.NewConfigFromConfigMap,
 			},
 			onAfterStore...,
 		),
@@ -79,5 +82,6 @@ func (s *Store) ToContext(ctx context.Context) context.Context {
 func (s *Store) Load() *Config {
 	return &Config{
 		Istio: s.UntypedLoad(IstioConfigName).(*Istio).DeepCopy(),
+		TLS:   s.UntypedLoad(tls.ConfigName).(*tls.Config).DeepCopy(),
 	}
 }

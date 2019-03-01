@@ -81,11 +81,10 @@ func NewController(
 ) *controller.Impl {
 
 	c := &Reconciler{
-		Base:                     reconciler.NewBase(opt, controllerAgentName),
-		clusterIngressLister:     clusterIngressInformer.Lister(),
-		virtualServiceLister:     virtualServiceInformer.Lister(),
-		gatewayLister:            gatewayInformer.Lister(),
-		enableReconcilingGateway: false,
+		Base:                 reconciler.NewBase(opt, controllerAgentName),
+		clusterIngressLister: clusterIngressInformer.Lister(),
+		virtualServiceLister: virtualServiceInformer.Lister(),
+		gatewayLister:        gatewayInformer.Lister(),
 	}
 	impl := controller.NewImpl(c, c.Logger, "ClusterIngresses", reconciler.MustNewStatsReporter("ClusterIngress", c.Logger))
 
@@ -213,10 +212,7 @@ func (c *Reconciler) reconcile(ctx context.Context, ci *v1alpha1.ClusterIngress)
 	// (pods) are deployed so that Istio ingress pods can consume them.
 	// So we need to copy certificates from their origin namespace to the Istio ingress namespace.
 
-	// TODO(zhiminx): currently we turn off Gateway reconciliation as it relies
-	// on Istio 1.1, which is not ready.
-	// We should eventually use a feature flag (in ConfigMap) to turn this on/off.
-	if c.enableReconcilingGateway {
+	if enableReconcilingGateway(ctx) {
 		if err := c.reconcileGateways(ctx, ci, gatewayNames); err != nil {
 			return err
 		}
@@ -226,6 +222,10 @@ func (c *Reconciler) reconcile(ctx context.Context, ci *v1alpha1.ClusterIngress)
 
 	logger.Info("ClusterIngress successfully synced")
 	return nil
+}
+
+func enableReconcilingGateway(ctx context.Context) bool {
+	return config.FromContext(ctx).TLS.EnableAutoTLS
 }
 
 func getLBStatus(gatewayServiceURL string) []v1alpha1.LoadBalancerIngressStatus {
