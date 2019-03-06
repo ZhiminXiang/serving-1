@@ -156,6 +156,7 @@ func main() {
 	certificateInformer := servingInformerFactory.Networking().V1alpha1().Certificates()
 	deploymentInformer := kubeInformerFactory.Apps().V1().Deployments()
 	coreServiceInformer := kubeInformerFactory.Core().V1().Services()
+	secretInformer := kubeInformerFactory.Core().V1().Secrets()
 	endpointsInformer := kubeInformerFactory.Core().V1().Endpoints()
 	configMapInformer := kubeInformerFactory.Core().V1().ConfigMaps()
 	virtualServiceInformer := sharedInformerFactory.Networking().V1alpha3().VirtualServices()
@@ -209,6 +210,7 @@ func main() {
 			clusterIngressInformer,
 			virtualServiceInformer,
 			gatewayInformer,
+			secretInformer,
 		),
 		certificate.NewController(
 			opt,
@@ -245,6 +247,7 @@ func main() {
 		imageInformer.Informer().HasSynced,
 		deploymentInformer.Informer().HasSynced,
 		coreServiceInformer.Informer().HasSynced,
+		secretInformer.Informer().HasSynced,
 		endpointsInformer.Informer().HasSynced,
 		configMapInformer.Informer().HasSynced,
 		virtualServiceInformer.Informer().HasSynced,

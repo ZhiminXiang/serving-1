@@ -27,6 +27,9 @@ type Interface interface {
 	// referenced object.
 	Track(ref corev1.ObjectReference, obj interface{}) error
 
+	// UnTrack tells us that "obj" will not track changes to the referenced object.
+	UnTrack(ref corev1.ObjectReference, obj interface{}) error
+
 	// OnChanged is a callback to register with the InformerFactory
 	// so that we are notified for appropriate object changes.
 	OnChanged(obj interface{})

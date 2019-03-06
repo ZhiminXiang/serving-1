@@ -42,6 +42,15 @@ func New(callback func(string), lease time.Duration) Interface {
 	return &impl{
 		leaseDuration: lease,
 		cb:            callback,
+		willExpire:    true,
+	}
+}
+
+func NewNonExpiration(callback func(string)) Interface {
+	return &impl{
+		leaseDuration: 0,
+		cb:            callback,
+		willExpire:    false,
 	}
 }
 
@@ -55,6 +64,8 @@ type impl struct {
 	// before having to renew the lease.
 	leaseDuration time.Duration
 
+	willExpire bool
+
 	cb func(string)
 }
 
@@ -66,28 +77,13 @@ type set map[string]time.Time
 
 // Track implements Interface.
 func (i *impl) Track(ref corev1.ObjectReference, obj interface{}) error {
-	invalidFields := map[string][]string{
-		"APIVersion": validation.IsQualifiedName(ref.APIVersion),
-		"Kind":       validation.IsCIdentifier(ref.Kind),
-		"Namespace":  validation.IsDNS1123Label(ref.Namespace),
-		"Name":       validation.IsDNS1123Subdomain(ref.Name),
+	if err := validate(ref, obj); err != nil {
+		return err
 	}
-	fieldErrors := []string{}
-	for k, v := range invalidFields {
-		for _, msg := range v {
-			fieldErrors = append(fieldErrors, fmt.Sprintf("%s: %s", k, msg))
-		}
-	}
-	if len(fieldErrors) > 0 {
-		sort.Strings(fieldErrors)
-		return fmt.Errorf("Invalid ObjectReference:\n%s", strings.Join(fieldErrors, "\n"))
-	}
-
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
 	if err != nil {
 		return err
 	}
-
 	i.m.Lock()
 	defer i.m.Unlock()
 	if i.mapping == nil {
@@ -98,7 +94,7 @@ func (i *impl) Track(ref corev1.ObjectReference, obj interface{}) error {
 	if !ok {
 		l = set{}
 	}
-	if expiry, ok := l[key]; !ok || isExpired(expiry) {
+	if expiry, ok := l[key]; !ok || i.isExpired(expiry) {
 		// When covering an uncovered key, immediately call the
 		// registered callback to ensure that the following pattern
 		// doesn't create problems:
@@ -130,8 +126,8 @@ func objectReference(item kmeta.Accessor) corev1.ObjectReference {
 	}
 }
 
-func isExpired(expiry time.Time) bool {
-	return time.Now().After(expiry)
+func (i *impl) isExpired(expiry time.Time) bool {
+	return i.willExpire && time.Now().After(expiry)
 }
 
 // OnChanged implements Interface.
@@ -156,7 +152,7 @@ func (i *impl) OnChanged(obj interface{}) {
 
 	for key, expiry := range s {
 		// If the expiration has lapsed, then delete the key.
-		if isExpired(expiry) {
+		if i.isExpired(expiry) {
 			delete(s, key)
 			continue
 		}
@@ -166,4 +162,46 @@ func (i *impl) OnChanged(obj interface{}) {
 	if len(s) == 0 {
 		delete(i.mapping, or)
 	}
+}
+
+func (i *impl) UnTrack(ref corev1.ObjectReference, obj interface{}) error {
+	if err := validate(ref, obj); err != nil {
+		return err
+	}
+	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
+	if err != nil {
+		return err
+	}
+	i.m.Lock()
+	defer i.m.Unlock()
+	if i.mapping == nil {
+		return nil
+	}
+	l, ok := i.mapping[ref]
+	if !ok {
+		return nil
+	}
+	delete(l, key)
+	return nil
+}
+
+func validate(ref corev1.ObjectReference, obj interface{}) error {
+	invalidFields := map[string][]string{
+		"APIVersion": validation.IsQualifiedName(ref.APIVersion),
+		"Kind":       validation.IsCIdentifier(ref.Kind),
+		"Namespace":  validation.IsDNS1123Label(ref.Namespace),
+		"Name":       validation.IsDNS1123Subdomain(ref.Name),
+	}
+	fieldErrors := []string{}
+	for k, v := range invalidFields {
+		for _, msg := range v {
+			fieldErrors = append(fieldErrors, fmt.Sprintf("%s: %s", k, msg))
+		}
+	}
+	if len(fieldErrors) > 0 {
+		sort.Strings(fieldErrors)
+		return fmt.Errorf("Invalid ObjectReference:\n%s", strings.Join(fieldErrors, "\n"))
+	}
+
+	return nil
 }
