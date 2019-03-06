@@ -37,4 +37,12 @@ const (
 	// IngressLabelKey is the label key attached to underlying network programming
 	// resources to indicate which ClusterIngress triggered their creation.
 	IngressLabelKey = GroupName + "/clusteringress"
+
+	// OriginSecretNameLabelKey is the label key attached to the secret used for terminating TLS connection
+	// to indicate the name of the origin secret that the TLS termination secret is copied from.
+	OriginSecretNameLabelKey = GroupName + "/originSecretName"
+
+	// OriginSecretNamespaceLabelKey is the label key attached to the secret used for terminating TLS connection
+	// to indicate the namespace of the origin secret that the TLS termination secret is copied from.
+	OriginSecretNamespaceLabelKey = GroupName + "/originSecretNamespace"
 )
