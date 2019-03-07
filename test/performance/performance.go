@@ -19,10 +19,10 @@ package performance
 import (
 	"context"
 	"fmt"
+	"testing"
 	"time"
 
 	pkgTest "github.com/knative/pkg/test"
-	"github.com/knative/pkg/test/logging"
 	"github.com/knative/serving/test"
 	"github.com/knative/test-infra/shared/junit"
 	"github.com/knative/test-infra/shared/prometheus"
@@ -47,7 +47,7 @@ type Client struct {
 }
 
 // Setup creates all the clients that we need to interact with in our tests
-func Setup(ctx context.Context, logger *logging.BaseLogger, promReqd bool) (*Client, error) {
+func Setup(ctx context.Context, t *testing.T, promReqd bool) (*Client, error) {
 	clients, err := test.NewClients(pkgTest.Flags.Kubeconfig, pkgTest.Flags.Cluster, test.ServingNamespace)
 	if err != nil {
 		return nil, err
@@ -55,21 +55,19 @@ func Setup(ctx context.Context, logger *logging.BaseLogger, promReqd bool) (*Cli
 
 	var p *prometheus.PromProxy
 	if promReqd {
-		logger.Info("Creating prometheus proxy client")
+		t.Log("Creating prometheus proxy client")
 		p = &prometheus.PromProxy{Namespace: monitoringNS}
-		p.Setup(ctx, logger)
+		p.Setup(ctx, t.Logf)
 	}
 	return &Client{E2EClients: clients, PromClient: p}, nil
 }
 
 // TearDown cleans up resources used
-func TearDown(client *Client, logger *logging.BaseLogger, names test.ResourceNames) {
-	if client.E2EClients != nil && client.E2EClients.ServingClient != nil {
-		client.E2EClients.ServingClient.Delete([]string{names.Route}, []string{names.Config}, []string{names.Service})
-	}
+func TearDown(client *Client, names test.ResourceNames) {
+	test.TearDown(client.E2EClients, names)
 
 	if client.PromClient != nil {
-		client.PromClient.Teardown(logger)
+		client.PromClient.Teardown()
 	}
 }
 

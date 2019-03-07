@@ -21,6 +21,8 @@ import (
 	"fmt"
 	"reflect"
 
+	"k8s.io/apimachinery/pkg/util/sets"
+
 	"github.com/knative/pkg/apis/istio/v1alpha3"
 	istioinformers "github.com/knative/pkg/client/informers/externalversions/istio/v1alpha3"
 	istiolisters "github.com/knative/pkg/client/listers/istio/v1alpha3"
@@ -31,6 +33,7 @@ import (
 	"github.com/knative/serving/pkg/apis/networking/v1alpha1"
 	informers "github.com/knative/serving/pkg/client/informers/externalversions/networking/v1alpha1"
 	listers "github.com/knative/serving/pkg/client/listers/networking/v1alpha1"
+	"github.com/knative/serving/pkg/network"
 	"github.com/knative/serving/pkg/reconciler"
 	"github.com/knative/serving/pkg/reconciler/v1alpha1/clusteringress/config"
 	"github.com/knative/serving/pkg/reconciler/v1alpha1/clusteringress/resources"
@@ -43,10 +46,6 @@ import (
 )
 
 const (
-	// IstioIngressClassName value for specifying knative's Istio
-	// ClusterIngress reconciler.
-	IstioIngressClassName = "istio.ingress.networking.knative.dev"
-
 	controllerAgentName = "clusteringress-controller"
 )
 
@@ -84,7 +83,7 @@ func NewController(
 	impl := controller.NewImpl(c, c.Logger, "ClusterIngresses", reconciler.MustNewStatsReporter("ClusterIngress", c.Logger))
 
 	c.Logger.Info("Setting up event handlers")
-	myFilterFunc := reconciler.AnnotationFilterFunc(networking.IngressClassAnnotationKey, IstioIngressClassName, true)
+	myFilterFunc := reconciler.AnnotationFilterFunc(networking.IngressClassAnnotationKey, network.IstioIngressClassName, true)
 	clusterIngressInformer.Informer().AddEventHandler(cache.FilteringResourceEventHandler{
 		FilterFunc: myFilterFunc,
 		Handler: cache.ResourceEventHandlerFuncs{
@@ -147,7 +146,7 @@ func (c *Reconciler) Reconcile(ctx context.Context, key string) error {
 		// cache may be stale and we don't want to overwrite a prior update
 		// to status with this stale state.
 	} else if _, err := c.updateStatus(ci); err != nil {
-		logger.Warn("Failed to update clusterIngress status", zap.Error(err))
+		logger.Warnw("Failed to update clusterIngress status", zap.Error(err))
 		c.Recorder.Eventf(ci, corev1.EventTypeWarning, "UpdateFailed",
 			"Failed to update status for ClusterIngress %q: %v", ci.Name, err)
 		return err
@@ -199,6 +198,7 @@ func (c *Reconciler) reconcile(ctx context.Context, ci *v1alpha1.ClusterIngress)
 	// is successfully synced.
 	ci.Status.MarkNetworkConfigured()
 	ci.Status.MarkLoadBalancerReady(getLBStatus(gatewayServiceURLFromContext(ctx, ci)))
+	ci.Status.ObservedGeneration = ci.Generation
 	logger.Info("ClusterIngress successfully synced")
 	return nil
 }
@@ -245,11 +245,12 @@ func gatewayNamesFromContext(ctx context.Context, ci *v1alpha1.ClusterIngress) [
 }
 
 func dedup(strs []string) []string {
-	existed := make(map[string]struct{})
+	existed := sets.NewString()
 	unique := []string{}
+	// We can't just do `sets.NewString(str)`, since we need to preserve the order.
 	for _, s := range strs {
-		if _, ok := existed[s]; !ok {
-			existed[s] = struct{}{}
+		if !existed.Has(s) {
+			existed.Insert(s)
 			unique = append(unique, s)
 		}
 	}
@@ -266,7 +267,7 @@ func (c *Reconciler) reconcileVirtualService(ctx context.Context, ci *v1alpha1.C
 	if apierrs.IsNotFound(err) {
 		vs, err = c.SharedClientSet.NetworkingV1alpha3().VirtualServices(ns).Create(desired)
 		if err != nil {
-			logger.Error("Failed to create VirtualService", zap.Error(err))
+			logger.Errorw("Failed to create VirtualService", zap.Error(err))
 			c.Recorder.Eventf(ci, corev1.EventTypeWarning, "CreationFailed",
 				"Failed to create VirtualService %q/%q: %v", ns, name, err)
 			return err
@@ -285,7 +286,7 @@ func (c *Reconciler) reconcileVirtualService(ctx context.Context, ci *v1alpha1.C
 		existing.Spec = desired.Spec
 		_, err = c.SharedClientSet.NetworkingV1alpha3().VirtualServices(ns).Update(existing)
 		if err != nil {
-			logger.Error("Failed to update VirtualService", zap.Error(err))
+			logger.Errorw("Failed to update VirtualService", zap.Error(err))
 			return err
 		}
 		c.Recorder.Eventf(ci, corev1.EventTypeNormal, "Updated",
