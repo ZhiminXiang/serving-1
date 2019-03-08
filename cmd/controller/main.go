@@ -153,6 +153,7 @@ func main() {
 	revisionInformer := servingInformerFactory.Serving().V1alpha1().Revisions()
 	kpaInformer := servingInformerFactory.Autoscaling().V1alpha1().PodAutoscalers()
 	clusterIngressInformer := servingInformerFactory.Networking().V1alpha1().ClusterIngresses()
+	certificateInformer := servingInformerFactory.Networking().V1alpha1().Certificates()
 	deploymentInformer := kubeInformerFactory.Apps().V1().Deployments()
 	coreServiceInformer := kubeInformerFactory.Core().V1().Services()
 	endpointsInformer := kubeInformerFactory.Core().V1().Endpoints()
@@ -188,6 +189,7 @@ func main() {
 			revisionInformer,
 			coreServiceInformer,
 			clusterIngressInformer,
+			certificateInformer,
 		),
 		labeler.NewRouteToConfigurationController(
 			opt,

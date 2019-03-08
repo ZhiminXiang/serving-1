@@ -36,3 +36,7 @@ func K8sServiceFullname(route *v1alpha1.Route) string {
 func ClusterIngress(route *v1alpha1.Route) string {
 	return fmt.Sprintf("route-%s", route.UID)
 }
+
+func RouteCertificate(route *v1alpha1.Route) string {
+	return fmt.Sprintf("route-%s", route.UID)
+}

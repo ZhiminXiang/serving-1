@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
@@ -172,6 +173,31 @@ func (c *Impl) EnqueueLabelOfNamespaceScopedResource(namespaceLabel, nameLabel s
 		// This is for the scenario that object and the parent resource are of same namespace,
 		// e.g. to enqueue the revision of an endpoint.
 		c.EnqueueKey(fmt.Sprintf("%s/%s", object.GetNamespace(), controllerKey))
+	}
+}
+
+func (c *Impl) EnqueueKeysFromAnnoation(annotationKey string) func(obj interface{}) {
+	return func(obj interface{}) {
+		object, err := kmeta.DeletionHandlingAccessor(obj)
+		if err != nil {
+			c.logger.Error(err)
+			return
+		}
+		annotations := object.GetAnnotations()
+		annotation, ok := annotations[annotationKey]
+		if !ok {
+			c.logger.Debugf("Object %s/%s does not have a referring name annotation %s",
+				object.GetNamespace(), object.GetName(), annotationKey)
+			return
+		}
+		var keys []string
+		if err := json.Unmarshal([]byte(annotation), &keys); err != nil {
+			c.logger.Error(err)
+			return
+		}
+		for _, key := range keys {
+			c.EnqueueKey(key)
+		}
 	}
 }
 

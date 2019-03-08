@@ -27,6 +27,7 @@ import (
 	duckv1alpha1 "github.com/knative/pkg/apis/duck/v1alpha1"
 	"github.com/knative/pkg/kmeta"
 	"github.com/knative/serving/pkg/apis/networking/v1alpha1"
+	networkingv1alpha1 "github.com/knative/serving/pkg/apis/networking/v1alpha1"
 )
 
 // +genclient
@@ -88,6 +89,14 @@ type TrafficTarget struct {
 	Percent int `json:"percent"`
 }
 
+type Certificate struct {
+	Name string `json:"name,omitempty`
+
+	Namespace string `json:"name,omitempty`
+
+	Conditions duckv1alpha1.Conditions `json:"conditions,omitempty"`
+}
+
 // RouteSpec holds the desired state of the Route (from the client).
 type RouteSpec struct {
 	// DeprecatedGeneration was used prior in Kubernetes versions <1.11
@@ -147,6 +156,10 @@ type RouteStatus struct {
 	// LatestReadyRevisionName that we last observed.
 	// +optional
 	Traffic []TrafficTarget `json:"traffic,omitempty"`
+
+	// Certificates holds the information of the certificates that are automatically
+	// provisioned by the system.
+	Certificates []Certificate `json:"certificates,omitempty"`
 
 	// Conditions communicates information about ongoing/complete
 	// reconciliation processes that bring the "spec" inline with the observed
@@ -247,6 +260,18 @@ func (rs *RouteStatus) PropagateClusterIngressStatus(cs v1alpha1.IngressStatus) 
 	case cc.Status == corev1.ConditionFalse:
 		routeCondSet.Manage(rs).MarkFalse(RouteConditionIngressReady, cc.Reason, cc.Message)
 	}
+}
+
+func (rs *RouteStatus) PropagateCertificateStatus(desired []*networkingv1alpha1.Certificate) {
+	certs := []Certificate{}
+	for _, c := range desired {
+		certs = append(certs, Certificate{
+			Name:       c.Name,
+			Namespace:  c.Namespace,
+			Conditions: c.Status.Conditions,
+		})
+	}
+	rs.Certificates = certs
 }
 
 // GetConditions returns the Conditions array. This enables generic handling of
