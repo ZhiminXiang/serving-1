@@ -64,4 +64,6 @@ const (
 	// BuildHashLabelKey is the label key attached to a Build indicating the
 	// hash of the spec from which they were created.
 	BuildHashLabelKey = GroupName + "/buildHash"
+
+	RouteNamespaceNameAnnotationKey = GroupName + "/routeNamespaceName"
 )

@@ -39,6 +39,7 @@ import (
 	"github.com/knative/pkg/system"
 	"github.com/knative/pkg/tracker"
 	"github.com/knative/serving/pkg/apis/networking"
+	networkingv1alpha1 "github.com/knative/serving/pkg/apis/networking/v1alpha1"
 	"github.com/knative/serving/pkg/apis/serving"
 	"github.com/knative/serving/pkg/apis/serving/v1alpha1"
 	networkinginformers "github.com/knative/serving/pkg/client/informers/externalversions/networking/v1alpha1"
@@ -81,6 +82,7 @@ type Reconciler struct {
 	revisionLister       listers.RevisionLister
 	serviceLister        corev1listers.ServiceLister
 	clusterIngressLister networkinglisters.ClusterIngressLister
+	certificateLister    networkinglisters.CertificateLister
 	configStore          configStore
 	tracker              tracker.Interface
 
@@ -102,9 +104,10 @@ func NewController(
 	revisionInformer servinginformers.RevisionInformer,
 	serviceInformer corev1informers.ServiceInformer,
 	clusterIngressInformer networkinginformers.ClusterIngressInformer,
+	certificateInformer networkinginformers.CertificateInformer,
 ) *controller.Impl {
 	return NewControllerWithClock(opt, routeInformer, configInformer, revisionInformer,
-		serviceInformer, clusterIngressInformer, system.RealClock{})
+		serviceInformer, clusterIngressInformer, certificateInformer, system.RealClock{})
 }
 
 func NewControllerWithClock(
@@ -114,6 +117,7 @@ func NewControllerWithClock(
 	revisionInformer servinginformers.RevisionInformer,
 	serviceInformer corev1informers.ServiceInformer,
 	clusterIngressInformer networkinginformers.ClusterIngressInformer,
+	certificateInformer networkinginformers.CertificateInformer,
 	clock system.Clock,
 ) *controller.Impl {
 
@@ -126,6 +130,7 @@ func NewControllerWithClock(
 		revisionLister:       revisionInformer.Lister(),
 		serviceLister:        serviceInformer.Lister(),
 		clusterIngressLister: clusterIngressInformer.Lister(),
+		certificateLister:    certificateInformer.Lister(),
 		clock:                clock,
 	}
 	impl := controller.NewImpl(c, c.Logger, "Routes", reconciler.MustNewStatsReporter("Routes", c.Logger))
@@ -164,6 +169,12 @@ func NewControllerWithClock(
 		AddFunc:    controller.EnsureTypeMeta(c.tracker.OnChanged, gvk),
 		UpdateFunc: controller.PassNew(controller.EnsureTypeMeta(c.tracker.OnChanged, gvk)),
 		DeleteFunc: controller.EnsureTypeMeta(c.tracker.OnChanged, gvk),
+	})
+
+	certificateInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    impl.EnqueueKeysFromAnnoation(serving.RouteNamespaceNameAnnotationKey),
+		UpdateFunc: controller.PassNew(impl.EnqueueKeysFromAnnoation(serving.RouteNamespaceNameAnnotationKey)),
+		DeleteFunc: impl.EnqueueKeysFromAnnoation(serving.RouteNamespaceNameAnnotationKey),
 	})
 
 	c.Logger.Info("Setting up ConfigMap receivers")
@@ -275,6 +286,22 @@ func (c *Reconciler) reconcile(ctx context.Context, r *v1alpha1.Route) error {
 		return err
 	}
 
+	enableAutoTLS := true
+	enableWildcardCert := true
+	if enableAutoTLS {
+		desiredCerts, err := resources.MakeCertificates(ctx, r, traffic, enableWildcardCert)
+		if err != nil {
+			return err
+		}
+		logger.Infof("Make certificates result %q", desiredCerts)
+		desiredCerts, err = c.reconcileCertificates(ctx, r, desiredCerts)
+		if err != nil {
+			return err
+		}
+		logger.Infof("reconcile certificate result %q", desiredCerts)
+		r.Status.PropagateCertificateStatus(desiredCerts)
+	}
+
 	logger.Info("Creating ClusterIngress.")
 	desired := resources.MakeClusterIngress(r, traffic, ingressClassForRoute(ctx, r))
 	clusterIngress, err := c.reconcileClusterIngress(ctx, r, desired)
@@ -305,6 +332,11 @@ func (c *Reconciler) reconcileDeletion(ctx context.Context, r *v1alpha1.Route) e
 	// Delete the ClusterIngress resources for this Route.
 	logger.Info("Cleaning up ClusterIngress")
 	if err := c.deleteClusterIngressesForRoute(r); err != nil {
+		return err
+	}
+
+	logger.Info("Cleaning up Certificates")
+	if _, err := c.reconcileCertificates(ctx, r, []*networkingv1alpha1.Certificate{}); err != nil {
 		return err
 	}
 

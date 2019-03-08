@@ -24,6 +24,7 @@ import (
 	"github.com/knative/pkg/apis/duck"
 	"github.com/knative/pkg/logging"
 	netv1alpha1 "github.com/knative/serving/pkg/apis/networking/v1alpha1"
+	networkingv1alpha1 "github.com/knative/serving/pkg/apis/networking/v1alpha1"
 	"github.com/knative/serving/pkg/apis/serving"
 	"github.com/knative/serving/pkg/apis/serving/v1alpha1"
 	"github.com/knative/serving/pkg/reconciler/v1alpha1/route/config"
@@ -236,4 +237,83 @@ func (c *Reconciler) reconcileTargetRevisions(ctx context.Context, t *traffic.Co
 		}
 	}
 	return eg.Wait()
+}
+
+func (c *Reconciler) reconcileCertificates(ctx context.Context, r *v1alpha1.Route, desiredCerts []*networkingv1alpha1.Certificate) ([]*networkingv1alpha1.Certificate, error) {
+	if err := c.removeOwnershipForUnusedcert(ctx, r, desiredCerts); err != nil {
+		return nil, err
+	}
+	result := []*networkingv1alpha1.Certificate{}
+	for _, desiredCert := range desiredCerts {
+		cert, err := c.reconcileCert(ctx, r, desiredCert)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, cert)
+	}
+	return result, nil
+}
+
+func (c *Reconciler) reconcileCert(ctx context.Context, r *v1alpha1.Route, desiredCert *networkingv1alpha1.Certificate) (*networkingv1alpha1.Certificate, error) {
+	logger := logging.FromContext(ctx)
+	cert, err := c.certificateLister.Certificates(desiredCert.Namespace).Get(desiredCert.Name)
+	if apierrs.IsNotFound(err) {
+		cert, err = c.ServingClientSet.NetworkingV1alpha1().Certificates(desiredCert.Namespace).Create(desiredCert)
+		if err != nil {
+			logger.Error("Failed to create Certificate", zap.Error(err))
+			c.Recorder.Eventf(r, corev1.EventTypeWarning, "CreationFailed",
+				"Failed to create Certificate for route %s/%s: %v", r.Namespace, r.Name, err)
+			return nil, err
+		}
+		c.Recorder.Eventf(r, corev1.EventTypeNormal, "Created",
+			"Created Certificate %q/%q", cert.Name, cert.Namespace)
+		return cert, nil
+	} else if err != nil {
+		return nil, err
+	} else {
+		origin := cert.DeepCopy()
+		isOwner, err := resources.IsCertOwner(cert, r)
+		if err != nil {
+			return nil, err
+		}
+		if !isOwner {
+			resources.AddToCertOwner(origin, r)
+		}
+
+		if !equality.Semantic.DeepEqual(cert.Spec, desiredCert.Spec) {
+			origin.Spec = desiredCert.Spec
+		}
+
+		if equality.Semantic.DeepEqual(cert, origin) {
+			return cert, nil
+		}
+		updated, err := c.ServingClientSet.NetworkingV1alpha1().Certificates(origin.Namespace).Update(origin)
+		if err != nil {
+			return nil, err
+		}
+		c.Recorder.Eventf(origin, corev1.EventTypeNormal, "Updated",
+			"Updated Spec for Certificate %q/%q", origin.Name, origin.Namespace)
+		return updated, nil
+	}
+}
+
+func (c *Reconciler) removeOwnershipForUnusedcert(ctx context.Context, r *v1alpha1.Route, desiredCerts []*networkingv1alpha1.Certificate) error {
+	unusedCerts := resources.GetUnusedCerts(desiredCerts, r)
+	for _, certInfo := range unusedCerts {
+		unusedCert, err := c.certificateLister.Certificates(certInfo.Namespace).Get(certInfo.Name)
+		if err != nil {
+			return err
+		}
+		cp := unusedCert.DeepCopy()
+		if err := resources.RemoveCertOwner(cp, r); err != nil {
+			return err
+		}
+		if equality.Semantic.DeepEqual(cp, unusedCert) {
+			continue
+		}
+		if _, err := c.ServingClientSet.NetworkingV1alpha1().Certificates(cp.Namespace).Update(cp); err != nil {
+			return err
+		}
+	}
+	return nil
 }
