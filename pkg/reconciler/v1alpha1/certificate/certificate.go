@@ -133,7 +133,7 @@ func (c *Reconciler) reconcile(ctx context.Context, knCert *v1alpha1.Certificate
 	knCert.Status.InitializeConditions()
 
 	logger.Info("Reconciling Cert-Manager certificate.")
-	cmCert := resources.MakeCertManagerCertificate(knCert)
+	cmCert := resources.MakeCertManagerCertificate(ctx, knCert)
 	cmCert, err := c.reconcileCMCertificate(ctx, knCert, cmCert)
 	if err != nil {
 		return err

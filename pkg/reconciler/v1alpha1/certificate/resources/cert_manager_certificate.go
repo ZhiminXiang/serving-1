@@ -20,11 +20,12 @@ import (
 	certmanagerv1alpha1 "github.com/jetstack/cert-manager/pkg/apis/certmanager/v1alpha1"
 	"github.com/knative/pkg/kmeta"
 	"github.com/knative/serving/pkg/apis/networking/v1alpha1"
+	"github.com/knative/serving/pkg/reconciler/v1alpha1/certificate/config"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // MakeCertManagerCertificate creates a Cert-Manager `Certificate` for requesting a SSL certificate.
-func MakeCertManagerCertificate(knCert *v1alpha1.Certificate) *certmanagerv1alpha1.Certificate {
+func MakeCertManagerCertificate(cmConfig *config.CertManagerConfig, knCert *v1alpha1.Certificate) *certmanagerv1alpha1.Certificate {
 	return &certmanagerv1alpha1.Certificate{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            knCert.Name,
@@ -33,31 +34,9 @@ func MakeCertManagerCertificate(knCert *v1alpha1.Certificate) *certmanagerv1alph
 		},
 		Spec: certmanagerv1alpha1.CertificateSpec{
 			SecretName: knCert.Spec.SecretName,
-			// TODO(zhiminx): Support requesting the wildcard format of the DNS names.
-			DNSNames: knCert.Spec.DNSNames,
-			// TODO(zhiminx): Make `IssuerRef` configurable through a ConfigMap.
-			IssuerRef: certmanagerv1alpha1.ObjectReference{
-				Kind: "ClusterIssuer",
-				Name: "letsencrypt-issuer",
-			},
-			// This ACME config currently limits the challenge type to DNS challenge, and
-			// the DNS server provider to GCP DNS. We need to make `ACME` configurable
-			// through a ConfigMap in order to support both DNS and HTTP challenges, and
-			// multiple DNS server provider.
-			// TODO(zhiminx): Make `ACME` configurable throught a ConfigMap.
-			ACME: &certmanagerv1alpha1.ACMECertificateConfig{
-				Config: []certmanagerv1alpha1.DomainSolverConfig{
-					{
-						Domains: knCert.Spec.DNSNames,
-						SolverConfig: certmanagerv1alpha1.SolverConfig{
-							DNS01: &certmanagerv1alpha1.DNS01SolverConfig{
-								// GCP DNS.
-								Provider: "cloud-dns-provider",
-							},
-						},
-					},
-				},
-			},
+			DNSNames:   knCert.Spec.DNSNames,
+			IssuerRef:  *cmConfig.IssuerRef,
+			ACME:       cmConfig.ACME,
 		},
 	}
 }
