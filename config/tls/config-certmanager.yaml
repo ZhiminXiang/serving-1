@@ -37,11 +37,19 @@ data:
     # These sample configuration options may be copied out of
     # this block and unindented to actually change the configuration.
 
-    acme: |
-      config:
-      - dns01:
-        provider: cloud-dns-provider
-        
+    # IssuerRef is a reference to the issuer for this certificate.
+    # IssuerRef should be either `ClusterIssuer` or `Issuer`.
+    # Please refer `IssuerRef` in https://github.com/jetstack/cert-manager/blob/master/pkg/apis/certmanager/v1alpha1/types_certificate.go
+    # for more details about IssuerRef configuration.
     issuerRef: |
       kind: ClusterIssuer
       name: letsencrypt-issuer
+
+    # ACME defines the configuration for the ACME certificate provider.
+    # The ACME Config should be either dns01 or http01.
+    # Please refer `ACMECertificateConfig` in https://github.com/jetstack/cert-manager/blob/master/pkg/apis/certmanager/v1alpha1/types_certificate.go
+    # for more details about ACME configuration.
+    acme: |
+      config:
+      - dns01:
+          provider: cloud-dns-provider

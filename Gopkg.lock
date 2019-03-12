@@ -383,7 +383,7 @@
   version = "v0.3.6"
 
 [[projects]]
-  digest = "1:b6e38fa0eebf628884e09eac58b95b456ed92fdb905786340a41be5faf1ed3c7"
+  digest = "1:8d0e02b1e093711c488f976d5d01b9539209726333ce6588f221fc08fb366f84"
   name = "github.com/jetstack/cert-manager"
   packages = [
     "pkg/apis/certmanager",
@@ -393,6 +393,8 @@
     "pkg/client/clientset/versioned/scheme",
     "pkg/client/clientset/versioned/typed/certmanager/v1alpha1",
     "pkg/client/clientset/versioned/typed/certmanager/v1alpha1/fake",
+    "pkg/client/informers/externalversions",
+    "pkg/client/informers/externalversions/certmanager",
     "pkg/client/informers/externalversions/certmanager/v1alpha1",
     "pkg/client/informers/externalversions/internalinterfaces",
     "pkg/client/listers/certmanager/v1alpha1",
@@ -1333,6 +1335,7 @@
     "github.com/jetstack/cert-manager/pkg/apis/certmanager/v1alpha1",
     "github.com/jetstack/cert-manager/pkg/client/clientset/versioned",
     "github.com/jetstack/cert-manager/pkg/client/clientset/versioned/fake",
+    "github.com/jetstack/cert-manager/pkg/client/informers/externalversions",
     "github.com/jetstack/cert-manager/pkg/client/informers/externalversions/certmanager/v1alpha1",
     "github.com/jetstack/cert-manager/pkg/client/listers/certmanager/v1alpha1",
     "github.com/knative/build-pipeline/pkg/apis/pipeline/v1alpha1",
