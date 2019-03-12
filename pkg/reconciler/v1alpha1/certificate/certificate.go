@@ -24,12 +24,14 @@ import (
 	certmanagerclientset "github.com/jetstack/cert-manager/pkg/client/clientset/versioned"
 	certmanagerinformers "github.com/jetstack/cert-manager/pkg/client/informers/externalversions/certmanager/v1alpha1"
 	certmanagerlisters "github.com/jetstack/cert-manager/pkg/client/listers/certmanager/v1alpha1"
+	"github.com/knative/pkg/configmap"
 	"github.com/knative/pkg/controller"
 	"github.com/knative/pkg/logging"
 	"github.com/knative/serving/pkg/apis/networking/v1alpha1"
 	informers "github.com/knative/serving/pkg/client/informers/externalversions/networking/v1alpha1"
 	listers "github.com/knative/serving/pkg/client/listers/networking/v1alpha1"
 	"github.com/knative/serving/pkg/reconciler"
+	"github.com/knative/serving/pkg/reconciler/v1alpha1/certificate/config"
 	"github.com/knative/serving/pkg/reconciler/v1alpha1/certificate/resources"
 	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
@@ -42,6 +44,11 @@ const (
 	controllerAgentName = "certificate-controller"
 )
 
+type configStore interface {
+	ToContext(ctx context.Context) context.Context
+	WatchConfigs(w configmap.Watcher)
+}
+
 // Reconciler implements controller.Reconciler for Certificate resources.
 type Reconciler struct {
 	*reconciler.Base
@@ -50,6 +57,8 @@ type Reconciler struct {
 	knCertificateLister listers.CertificateLister
 	cmCertificateLister certmanagerlisters.CertificateLister
 	certManagerClient   certmanagerclientset.Interface
+
+	configStore configStore
 }
 
 // NewController initializes the controller and is called by the generated code
@@ -81,6 +90,14 @@ func NewController(
 		UpdateFunc: controller.PassNew(impl.EnqueueControllerOf),
 		DeleteFunc: impl.EnqueueControllerOf,
 	})
+
+	c.Logger.Info("Setting up ConfigMap receivers")
+	resyncCertOnCertManagerconfigChange := configmap.TypeFilter(&config.CertManagerConfig{})(func(string, interface{}) {
+		impl.GlobalResync(knCertificateInformer.Informer())
+	})
+	c.configStore = config.NewStore(c.Logger.Named("config-store"), resyncCertOnCertManagerconfigChange)
+	c.configStore.WatchConfigs(opt.ConfigMapWatcher)
+
 	return impl
 }
 
@@ -98,6 +115,7 @@ func (c *Reconciler) Reconcile(ctx context.Context, key string) error {
 		return nil
 	}
 	logger := logging.FromContext(ctx)
+	ctx = c.configStore.ToContext(ctx)
 
 	original, err := c.knCertificateLister.Certificates(namespace).Get(name)
 	if apierrs.IsNotFound(err) {
@@ -133,7 +151,8 @@ func (c *Reconciler) reconcile(ctx context.Context, knCert *v1alpha1.Certificate
 	knCert.Status.InitializeConditions()
 
 	logger.Info("Reconciling Cert-Manager certificate.")
-	cmCert := resources.MakeCertManagerCertificate(ctx, knCert)
+	cmConfig := config.FromContext(ctx).CertManager
+	cmCert := resources.MakeCertManagerCertificate(cmConfig, knCert)
 	cmCert, err := c.reconcileCMCertificate(ctx, knCert, cmCert)
 	if err != nil {
 		return err

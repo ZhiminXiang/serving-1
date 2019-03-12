@@ -17,14 +17,14 @@ limitations under the License.
 package config
 
 import (
-	yaml "gopkg.in/yaml.v2"
+	"github.com/ghodss/yaml"
 
 	certmanagerv1alpha1 "github.com/jetstack/cert-manager/pkg/apis/certmanager/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 )
 
 const (
-	acmeKey      = "amce"
+	acmeKey      = "acme"
 	issuerRefKey = "issuerRef"
 
 	// CertManagerConfigName is the name of the configmap containing all
