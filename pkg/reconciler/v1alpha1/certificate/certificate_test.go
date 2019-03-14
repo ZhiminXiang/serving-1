@@ -17,14 +17,17 @@ limitations under the License.
 package certificate
 
 import (
+	"context"
 	"testing"
 
 	certmanagerv1alpha1 "github.com/jetstack/cert-manager/pkg/apis/certmanager/v1alpha1"
 	fakecmclient "github.com/jetstack/cert-manager/pkg/client/clientset/versioned/fake"
 	duckv1alpha1 "github.com/knative/pkg/apis/duck/v1alpha1"
+	"github.com/knative/pkg/configmap"
 	"github.com/knative/pkg/controller"
 	"github.com/knative/serving/pkg/apis/networking/v1alpha1"
 	"github.com/knative/serving/pkg/reconciler"
+	"github.com/knative/serving/pkg/reconciler/v1alpha1/certificate/config"
 	"github.com/knative/serving/pkg/reconciler/v1alpha1/certificate/resources"
 	. "github.com/knative/serving/pkg/reconciler/v1alpha1/testing"
 	corev1 "k8s.io/api/core/v1"
@@ -54,7 +57,7 @@ func TestReconcile(t *testing.T) {
 			knCert("knCert", "foo"),
 		},
 		WantCreates: []metav1.Object{
-			resources.MakeCertManagerCertificate(knCert("knCert", "foo")),
+			resources.MakeCertManagerCertificate(certmanagerConfig(), knCert("knCert", "foo")),
 		},
 		WantStatusUpdates: []clientgotesting.UpdateActionImpl{{
 			Object: knCertWithStatus("knCert", "foo",
@@ -128,8 +131,39 @@ func TestReconcile(t *testing.T) {
 			knCertificateLister: listers.GetKnCertificateLister(),
 			cmCertificateLister: listers.GetCMCertificateLister(),
 			certManagerClient:   certManagerClient,
+			configStore: &testConfigStore{
+				config: &config.Config{
+					CertManager: certmanagerConfig(),
+				},
+			},
 		}
 	}))
+}
+
+type testConfigStore struct {
+	config *config.Config
+}
+
+func (t *testConfigStore) ToContext(ctx context.Context) context.Context {
+	return config.ToContext(ctx, t.config)
+}
+
+func (t *testConfigStore) WatchConfigs(w configmap.Watcher) {}
+
+var _ configStore = (*testConfigStore)(nil)
+
+func certmanagerConfig() *config.CertManagerConfig {
+	return &config.CertManagerConfig{
+		SolverConfig: &certmanagerv1alpha1.SolverConfig{
+			DNS01: &certmanagerv1alpha1.DNS01SolverConfig{
+				Provider: "cloud-dns-provider",
+			},
+		},
+		IssuerRef: &certmanagerv1alpha1.ObjectReference{
+			Kind: "ClusterIssuer",
+			Name: "Letsencrypt-issuer",
+		},
+	}
 }
 
 func makeFactory(c func(*Listers, reconciler.Options) controller.Reconciler) Factory {
@@ -162,7 +196,7 @@ func knCertWithStatus(name, namespace string, status *v1alpha1.CertificateStatus
 }
 
 func cmCert(name, namespace string, dnsNames []string) *certmanagerv1alpha1.Certificate {
-	cert := resources.MakeCertManagerCertificate(knCert(name, namespace))
+	cert := resources.MakeCertManagerCertificate(certmanagerConfig(), knCert(name, namespace))
 	cert.Spec.DNSNames = dnsNames
 	return cert
 }

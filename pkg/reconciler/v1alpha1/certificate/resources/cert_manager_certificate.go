@@ -39,7 +39,7 @@ func MakeCertManagerCertificate(cmConfig *config.CertManagerConfig, knCert *v1al
 			ACME: &certmanagerv1alpha1.ACMECertificateConfig{
 				Config: []certmanagerv1alpha1.DomainSolverConfig{{
 					Domains:      knCert.Spec.DNSNames,
-					SolverConfig: cmConfig.ACME.Config[0].SolverConfig,
+					SolverConfig: *cmConfig.SolverConfig,
 				}},
 			},
 		},
