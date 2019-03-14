@@ -24,8 +24,8 @@ import (
 )
 
 const (
-	acmeKey      = "acme"
-	issuerRefKey = "issuerRef"
+	solverConfigKey = "solverConfig"
+	issuerRefKey    = "issuerRef"
 
 	// CertManagerConfigName is the name of the configmap containing all
 	// configuration related to Cert-Manager.
@@ -35,17 +35,17 @@ const (
 // CertManagerConfig contains Cert-Manager related configuration defined in the
 // `config-certmanager` config map.
 type CertManagerConfig struct {
-	ACME      *certmanagerv1alpha1.ACMECertificateConfig
-	IssuerRef *certmanagerv1alpha1.ObjectReference
+	SolverConfig *certmanagerv1alpha1.SolverConfig
+	IssuerRef    *certmanagerv1alpha1.ObjectReference
 }
 
 // NewCertManagerConfigFromConfigMap creates an CertManagerConfig from the supplied ConfigMap
 func NewCertManagerConfigFromConfigMap(configMap *corev1.ConfigMap) (*CertManagerConfig, error) {
-	acme := &certmanagerv1alpha1.ACMECertificateConfig{}
+	solverConfig := &certmanagerv1alpha1.SolverConfig{}
 	issuerRef := &certmanagerv1alpha1.ObjectReference{}
 	for k, v := range configMap.Data {
-		if k == acmeKey {
-			if err := yaml.Unmarshal([]byte(v), acme); err != nil {
+		if k == solverConfigKey {
+			if err := yaml.Unmarshal([]byte(v), solverConfig); err != nil {
 				return nil, err
 			}
 		} else if k == issuerRefKey {
@@ -55,7 +55,7 @@ func NewCertManagerConfigFromConfigMap(configMap *corev1.ConfigMap) (*CertManage
 		}
 	}
 	return &CertManagerConfig{
-		ACME:      acme,
-		IssuerRef: issuerRef,
+		SolverConfig: solverConfig,
+		IssuerRef:    issuerRef,
 	}, nil
 }

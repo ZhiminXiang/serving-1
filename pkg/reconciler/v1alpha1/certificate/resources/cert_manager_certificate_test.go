@@ -23,6 +23,7 @@ import (
 	certmanagerv1alpha1 "github.com/jetstack/cert-manager/pkg/apis/certmanager/v1alpha1"
 	"github.com/knative/pkg/kmeta"
 	"github.com/knative/serving/pkg/apis/networking/v1alpha1"
+	"github.com/knative/serving/pkg/reconciler/v1alpha1/certificate/config"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -37,14 +38,28 @@ var cert = &v1alpha1.Certificate{
 	},
 }
 
+var cmConfig = &config.CertManagerConfig{
+	SolverConfig: &certmanagerv1alpha1.SolverConfig{
+		DNS01: &certmanagerv1alpha1.DNS01SolverConfig{
+			Provider: "cloud-dns-provider",
+		},
+	},
+	IssuerRef: &certmanagerv1alpha1.ObjectReference{
+		Kind: "ClusterIssuer",
+		Name: "Letsencrypt-issuer",
+	},
+}
+
 func TestMakeCertManagerCertificate(t *testing.T) {
 	tests := []struct {
-		name   string
-		knCert *v1alpha1.Certificate
-		want   *certmanagerv1alpha1.Certificate
+		name     string
+		knCert   *v1alpha1.Certificate
+		cmConfig *config.CertManagerConfig
+		want     *certmanagerv1alpha1.Certificate
 	}{{
-		name:   "normal case",
-		knCert: cert,
+		name:     "normal case",
+		knCert:   cert,
+		cmConfig: cmConfig,
 		want: &certmanagerv1alpha1.Certificate{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:            "test-cert",
@@ -56,7 +71,7 @@ func TestMakeCertManagerCertificate(t *testing.T) {
 				DNSNames:   []string{"host1.example.com", "host2.example.com"},
 				IssuerRef: certmanagerv1alpha1.ObjectReference{
 					Kind: "ClusterIssuer",
-					Name: "letsencrypt-issuer",
+					Name: "Letsencrypt-issuer",
 				},
 				ACME: &certmanagerv1alpha1.ACMECertificateConfig{
 					Config: []certmanagerv1alpha1.DomainSolverConfig{
@@ -75,7 +90,7 @@ func TestMakeCertManagerCertificate(t *testing.T) {
 	}}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			got := MakeCertManagerCertificate(test.knCert)
+			got := MakeCertManagerCertificate(test.cmConfig, test.knCert)
 			if diff := cmp.Diff(test.want, got); diff != "" {
 				t.Errorf("MakeCertManagerCertificate (-want, +got) = %v", diff)
 			}
