@@ -1323,6 +1323,8 @@
     "github.com/jetstack/cert-manager/pkg/apis/certmanager/v1alpha1",
     "github.com/jetstack/cert-manager/pkg/client/clientset/versioned",
     "github.com/jetstack/cert-manager/pkg/client/clientset/versioned/fake",
+    "github.com/jetstack/cert-manager/pkg/client/clientset/versioned/typed/certmanager/v1alpha1",
+    "github.com/jetstack/cert-manager/pkg/client/clientset/versioned/typed/certmanager/v1alpha1/fake",
     "github.com/jetstack/cert-manager/pkg/client/informers/externalversions",
     "github.com/jetstack/cert-manager/pkg/client/informers/externalversions/certmanager/v1alpha1",
     "github.com/jetstack/cert-manager/pkg/client/listers/certmanager/v1alpha1",
