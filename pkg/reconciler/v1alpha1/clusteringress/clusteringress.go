@@ -242,7 +242,7 @@ func (c *Reconciler) reconcile(ctx context.Context, ci *v1alpha1.ClusterIngress)
 	// on Istio 1.1, which is not ready.
 	// We should eventually use a feature flag (in ConfigMap) to turn this on/off.
 
-	if enableReconcilingGateway(ctx) {
+	if true {
 		// Add the finalizer before adding `Servers` into Gateway so that we can be sure
 		// the `Servers` get cleaned up from Gateway.
 		if err := c.ensureFinalizer(ci); err != nil {
@@ -508,6 +508,9 @@ func (c *Reconciler) deleteUnusedSecrets(ctx context.Context, ci *v1alpha1.Clust
 	gatewaySvcNamespaces := resources.GetGatewaySvcNamespaces(ctx)
 	for _, ns := range gatewaySvcNamespaces {
 		secrets, err := c.secretLister.Secrets(ns).List(resources.MakeSecretSelector(ci))
+		if err != nil {
+			return err
+		}
 		// We make the copies of all secrets to avoid modifying the informers cache.
 		secrets = resources.CopySecrets(secrets)
 		for _, s := range secrets {
