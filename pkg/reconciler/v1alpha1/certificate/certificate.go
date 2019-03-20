@@ -20,7 +20,7 @@ import (
 	"context"
 	"reflect"
 
-	certmanagerv1alpha1 "github.com/jetstack/cert-manager/pkg/apis/certmanager/v1alpha1"
+	cmv1alpha1 "github.com/jetstack/cert-manager/pkg/apis/certmanager/v1alpha1"
 	certmanagerclientset "github.com/jetstack/cert-manager/pkg/client/clientset/versioned"
 	certmanagerinformers "github.com/jetstack/cert-manager/pkg/client/informers/externalversions/certmanager/v1alpha1"
 	certmanagerlisters "github.com/jetstack/cert-manager/pkg/client/listers/certmanager/v1alpha1"
@@ -161,7 +161,7 @@ func (c *Reconciler) reconcile(ctx context.Context, knCert *v1alpha1.Certificate
 	return nil
 }
 
-func (c *Reconciler) reconcileCMCertificate(ctx context.Context, knCert *v1alpha1.Certificate, desired *certmanagerv1alpha1.Certificate) (*certmanagerv1alpha1.Certificate, error) {
+func (c *Reconciler) reconcileCMCertificate(ctx context.Context, knCert *v1alpha1.Certificate, desired *cmv1alpha1.Certificate) (*cmv1alpha1.Certificate, error) {
 	logger := logging.FromContext(ctx)
 	cmCert, err := c.cmCertificateLister.Certificates(desired.Namespace).Get(desired.Name)
 	if apierrs.IsNotFound(err) {
@@ -191,11 +191,8 @@ func (c *Reconciler) reconcileCMCertificate(ctx context.Context, knCert *v1alpha
 	return cmCert, nil
 }
 
-func setStatus(knCert *v1alpha1.Certificate, cmCert *certmanagerv1alpha1.Certificate) {
-	knCert.Status.CertificateInfo = v1alpha1.CertificateInfo{
-		SupportedDNSNames: cmCert.Spec.DNSNames,
-		NotAfter:          cmCert.Status.NotAfter,
-	}
+func setStatus(knCert *v1alpha1.Certificate, cmCert *cmv1alpha1.Certificate) {
+	knCert.Status.NotAfter = cmCert.Status.NotAfter
 
 	if resources.IsCertManagerCertificateReady(cmCert) {
 		knCert.Status.MarkReady()

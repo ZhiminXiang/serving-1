@@ -20,8 +20,8 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	certmanagerv1alpha1 "github.com/jetstack/cert-manager/pkg/apis/certmanager/v1alpha1"
+	"github.com/knative/pkg/system"
 	. "github.com/knative/serving/pkg/reconciler/testing"
-	"github.com/knative/serving/pkg/system"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
