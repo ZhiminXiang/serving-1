@@ -39,8 +39,6 @@ import (
 	"github.com/knative/serving/pkg/reconciler/v1alpha1/clusteringress/config"
 	"github.com/knative/serving/pkg/reconciler/v1alpha1/clusteringress/resources"
 	. "github.com/knative/serving/pkg/reconciler/v1alpha1/testing"
-<<<<<<< HEAD
-=======
 	"github.com/knative/serving/pkg/system"
 	_ "github.com/knative/serving/pkg/system/testing"
 	"golang.org/x/sync/errgroup"
@@ -51,7 +49,6 @@ import (
 	kubeinformers "k8s.io/client-go/informers"
 	fakekubeclientset "k8s.io/client-go/kubernetes/fake"
 	clientgotesting "k8s.io/client-go/testing"
->>>>>>> 4e1ad0ed... initial test
 )
 
 const (

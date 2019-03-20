@@ -142,11 +142,11 @@ func (l *Listers) GetVirtualServiceLister() istiolisters.VirtualServiceLister {
 	return istiolisters.NewVirtualServiceLister(l.indexerFor(&istiov1alpha3.VirtualService{}))
 }
 
-<<<<<<< HEAD
 // GetGatewayLister gets lister for Istio Gateway resource.
 func (l *Listers) GetGatewayLister() istiolisters.GatewayLister {
 	return istiolisters.NewGatewayLister(l.indexerFor(&istiov1alpha3.Gateway{}))
-=======
+}
+
 // GetKnCertificateLister gets lister for Knative Certificate resource.
 func (l *Listers) GetKnCertificateLister() networkinglisters.CertificateLister {
 	return networkinglisters.NewCertificateLister(l.indexerFor(&networking.Certificate{}))
@@ -155,7 +155,6 @@ func (l *Listers) GetKnCertificateLister() networkinglisters.CertificateLister {
 // GetCMCertificateLister gets lister for Cert Manager Certificate resource.
 func (l *Listers) GetCMCertificateLister() certmanagerlisters.CertificateLister {
 	return certmanagerlisters.NewCertificateLister(l.indexerFor(&certmanager.Certificate{}))
->>>>>>> 4e1ad0ed... initial test
 }
 
 func (l *Listers) GetImageLister() cachinglisters.ImageLister {
