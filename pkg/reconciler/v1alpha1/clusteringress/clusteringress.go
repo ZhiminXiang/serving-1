@@ -38,6 +38,7 @@ import (
 	"github.com/knative/serving/pkg/reconciler"
 	"github.com/knative/serving/pkg/reconciler/v1alpha1/clusteringress/config"
 	"github.com/knative/serving/pkg/reconciler/v1alpha1/clusteringress/resources"
+	"github.com/knative/serving/pkg/tls"
 	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -64,8 +65,6 @@ type Reconciler struct {
 	virtualServiceLister istiolisters.VirtualServiceLister
 	gatewayLister        istiolisters.GatewayLister
 	configStore          configStore
-
-	enableReconcilingGateway bool
 }
 
 // Check that our Reconciler implements controller.Reconciler
@@ -109,10 +108,10 @@ func NewController(
 	})
 
 	c.Logger.Info("Setting up ConfigMap receivers")
-	resyncIngressesOnIstioConfigChange := configmap.TypeFilter(&config.Istio{})(func(string, interface{}) {
+	resyncIngressesOnConfigChange := configmap.TypeFilter(&config.Config{})(func(string, interface{}) {
 		impl.GlobalResync(clusterIngressInformer.Informer())
 	})
-	c.configStore = config.NewStore(c.Logger.Named("config-store"), resyncIngressesOnIstioConfigChange)
+	c.configStore = config.NewStore(c.Logger.Named("config-store"), resyncIngressesOnConfigChange)
 	c.configStore.WatchConfigs(opt.ConfigMapWatcher)
 	return impl
 }
@@ -212,7 +211,7 @@ func (c *Reconciler) reconcile(ctx context.Context, ci *v1alpha1.ClusterIngress)
 	// (pods) are deployed so that Istio ingress pods can consume them.
 	// So we need to copy certificates from their origin namespace to the Istio ingress namespace.
 
-	if enableReconcilingGateway(ctx) {
+	if enablesAutoTLS(ctx) {
 		if err := c.reconcileGateways(ctx, ci, gatewayNames); err != nil {
 			return err
 		}
@@ -224,8 +223,8 @@ func (c *Reconciler) reconcile(ctx context.Context, ci *v1alpha1.ClusterIngress)
 	return nil
 }
 
-func enableReconcilingGateway(ctx context.Context) bool {
-	return config.FromContext(ctx).TLS.EnableAutoTLS
+func enablesAutoTLS(ctx context.Context) bool {
+	return config.FromContext(ctx).TLS.TLSMode == tls.AutoTLS
 }
 
 func getLBStatus(gatewayServiceURL string) []v1alpha1.LoadBalancerIngressStatus {

@@ -36,8 +36,11 @@ data:
     # These sample configuration options may be copied out of
     # this block and unindented to actually change the configuration.
 
-    # Feature flag to enable automatic TLS certificate provision
-    # and configuration.
-    # If Istio is the ClusterIngress solution, then this feature depends on
-    # Istio 1.1 (or above)
-    enable-auto-tls: "false"
+    # TLS mode of Knative. There are two TLS modes: "MANUAL" and "AUTO".
+    # "MANUAL" mode: operator needs to provision TLS certificates and configure
+    # gateway to enable TLS termination for Routes.
+    # "AUTO" mode: Knative will be responsible for provisioning TLS certificates
+    # and configure gateway to enable TLS termination for Routes. No manual work
+    # is needed from operators.
+    # If Istio is the ClusterIngress solution, then "AUTO" mode requires Istio 1.1 (or above)
+    tls-mode: "MANUAL"

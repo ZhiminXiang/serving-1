@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/knative/serving/pkg/tls"
 
 	. "github.com/knative/serving/pkg/reconciler/v1alpha1/testing"
 )
@@ -29,12 +30,19 @@ func TestStoreLoadWithContext(t *testing.T) {
 	store := NewStore(TestLogger(t))
 
 	istioConfig := ConfigMapFromTestFile(t, IstioConfigName)
+	tlsConfig := ConfigMapFromTestFile(t, tls.ConfigName)
 	store.OnConfigChanged(istioConfig)
+	store.OnConfigChanged(tlsConfig)
 	config := FromContext(store.ToContext(context.Background()))
 
-	expected, _ := NewIstioFromConfigMap(istioConfig)
-	if diff := cmp.Diff(expected, config.Istio); diff != "" {
+	expectedIstio, _ := NewIstioFromConfigMap(istioConfig)
+	if diff := cmp.Diff(expectedIstio, config.Istio); diff != "" {
 		t.Errorf("Unexpected istio config (-want, +got): %v", diff)
+	}
+
+	expectedTLS, _ := tls.NewConfigFromConfigMap(tlsConfig)
+	if diff := cmp.Diff(expectedTLS, config.TLS); diff != "" {
+		t.Errorf("Unexpected TLS config (-want, +got): %v", diff)
 	}
 }
 
@@ -42,14 +50,20 @@ func TestStoreImmutableConfig(t *testing.T) {
 	store := NewStore(TestLogger(t))
 
 	store.OnConfigChanged(ConfigMapFromTestFile(t, IstioConfigName))
+	store.OnConfigChanged(ConfigMapFromTestFile(t, tls.ConfigName))
 
 	config := store.Load()
 
 	config.Istio.IngressGateways = []Gateway{{GatewayName: "mutated", ServiceURL: "mutated"}}
+	config.TLS.TLSMode = tls.AutoTLS
 
 	newConfig := store.Load()
 
 	if newConfig.Istio.IngressGateways[0].GatewayName == "mutated" {
 		t.Error("Istio config is not immutable")
+	}
+
+	if newConfig.TLS.TLSMode == tls.AutoTLS {
+		t.Error("TLS config is not immutable")
 	}
 }

@@ -373,7 +373,7 @@ func TestReconcile_Gateway(t *testing.T) {
 						}},
 					},
 					TLS: &tls.Config{
-						EnableAutoTLS: true,
+						TLSMode: tls.AutoTLS,
 					},
 				},
 			},
@@ -436,6 +436,9 @@ func ReconcilerTestConfig() *config.Config {
 				GatewayName: "knative-ingress-gateway",
 				ServiceURL:  reconciler.GetK8sServiceFullname("istio-ingressgateway", "istio-system"),
 			}},
+		},
+		TLS: &tls.Config{
+			TLSMode: tls.ManualTLS,
 		},
 	}
 }
@@ -634,9 +637,9 @@ func TestGlobalResyncOnUpdateTLSConfigMap(t *testing.T) {
 	h := NewHooks()
 
 	// Check for Gateway created as a signal that syncHandler ran
-
 	h.OnUpdate(&sharedClient.Fake, "gateways", func(obj runtime.Object) HookResult {
 		updatedGateway := obj.(*v1alpha3.Gateway)
+		// The expected gateway should include the Istio TLS server.
 		expectedGateway := gateway("knative-shared-gateway", system.Namespace(), []v1alpha3.Server{ingressTLSServer})
 		if diff := cmp.Diff(updatedGateway, expectedGateway); diff != "" {
 			t.Logf("Want Gateway %v, but got %v", expectedGateway, updatedGateway)
@@ -694,7 +697,7 @@ func TestGlobalResyncOnUpdateTLSConfigMap(t *testing.T) {
 			Namespace: system.Namespace(),
 		},
 		Data: map[string]string{
-			"enable-auto-tls": "true",
+			"tls-mode": "AUTO",
 		},
 	}
 	watcher.OnChange(&tlsConfig)

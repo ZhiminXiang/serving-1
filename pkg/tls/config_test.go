@@ -34,35 +34,48 @@ func TestConfig(t *testing.T) {
 		wantErr    bool
 		wantConfig *Config
 	}{{
-		name: "enable auto tls",
+		name: "auto tls",
 		config: &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: system.Namespace(),
 				Name:      ConfigName,
 			},
 			Data: map[string]string{
-				"enable-auto-tls": "true",
+				"tls-mode": "AUTO",
 			},
 		},
 		wantErr: false,
 		wantConfig: &Config{
-			EnableAutoTLS: true,
+			TLSMode: AutoTLS,
 		},
 	}, {
-		name: "disable auto tls",
+		name: "manual tls",
 		config: &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: system.Namespace(),
 				Name:      ConfigName,
 			},
 			Data: map[string]string{
-				"enable-auto-tls": "false",
+				"tls-mode": "MANUAL",
 			},
 		},
 		wantErr: false,
 		wantConfig: &Config{
-			EnableAutoTLS: false,
+			TLSMode: ManualTLS,
 		},
+	}, {
+		name: "unsupported tls",
+		config: &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: system.Namespace(),
+				Name:      ConfigName,
+			},
+			Data: map[string]string{
+				"tls-mode": "UNSUPPORTED",
+			},
+		},
+		wantErr:    true,
+		wantConfig: nil,
 	}}
 
 	for _, tt := range cases {

@@ -17,7 +17,7 @@ limitations under the License.
 package tls
 
 import (
-	"strings"
+	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
 )
@@ -30,9 +30,24 @@ const (
 // Config contains the TLS configuration defined in the config-tls config map.
 // +k8s:deepcopy-gen=true
 type Config struct {
-	// Feature flags to enable automatic TLS certificate provision and configuration.
-	EnableAutoTLS bool
+	// TLS mode.
+	TLSMode TLSMode
 }
+
+const (
+	// AutoTLS specifies that the TLS mode of Knative is AUTO.
+	AutoTLS TLSMode = "AUTO"
+	// ManualTLS specifies that the TLS mode of Knative is MANUAL.
+	ManualTLS TLSMode = "MANUAL"
+)
+
+var tlsModes = map[string]TLSMode{
+	"AUTO":   AutoTLS,
+	"MANUAL": ManualTLS,
+}
+
+// TLSMode is the TLS mode of Knative
+type TLSMode string
 
 // NewConfigFromConfigMap creates a Config from the supplied ConfigMap.
 func NewConfigFromConfigMap(configMap *corev1.ConfigMap) (*Config, error) {
@@ -40,17 +55,21 @@ func NewConfigFromConfigMap(configMap *corev1.ConfigMap) (*Config, error) {
 	// Process bool fields
 	for _, b := range []struct {
 		key          string
-		field        *bool
-		defaultValue bool
+		field        *TLSMode
+		defaultValue TLSMode
 	}{{
-		key:          "enable-auto-tls",
-		field:        &cfg.EnableAutoTLS,
-		defaultValue: false,
+		key:          "tls-mode",
+		field:        &cfg.TLSMode,
+		defaultValue: ManualTLS,
 	}} {
 		if raw, ok := configMap.Data[b.key]; !ok {
 			*b.field = b.defaultValue
 		} else {
-			*b.field = strings.ToLower(raw) == "true"
+			if tlsMode, ok := tlsModes[raw]; ok {
+				*b.field = tlsMode
+			} else {
+				return nil, fmt.Errorf("No TLS mode for %s", raw)
+			}
 		}
 	}
 	return cfg, nil
