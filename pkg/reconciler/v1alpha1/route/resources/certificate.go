@@ -35,28 +35,25 @@ import (
 )
 
 // MakeCertificates creates Certificates for the Route to request TLS certificates.
-func MakeCertificates(ctx context.Context, route *v1alpha1.Route, tc *traffic.Config, enableWildcardCert bool) ([]*networkingv1alpha1.Certificate, error) {
+func MakeCertificates(ctx context.Context, route *v1alpha1.Route, dnsNames []string, enableWildcardCert bool) ([]*networkingv1alpha1.Certificate, error) {
 	if len(route.Status.Domain) == 0 {
 		return nil, fmt.Errorf("the Domain of the Status of Route %s/%s must not be empty", route.Namespace, route.Name)
 	}
 
-	dnsNames := []string{route.Status.Domain}
-	for name := range tc.Targets {
-		if name != traffic.DefaultTarget {
-			dnsNames = append(dnsNames, fmt.Sprintf("%s.%s", name, route.Status.Domain))
-		}
-	}
-
 	logger := logging.FromContext(ctx)
 	logger.Infof("DNS names are %q", dnsNames)
-	logger.Infof("Traffic targets %q", tc.Targets)
 
 	dnsNames = dedup(dnsNames)
 	sort.Strings(dnsNames)
 	certs := []*networkingv1alpha1.Certificate{}
 	if enableWildcardCert {
+		existingWildcardNames := sets.String{}
 		for _, dnsName := range dnsNames {
 			wildcardDNSName := wildcard(dnsName)
+			if existingWildcardNames.Has(wildcardDNSName) {
+				continue
+			}
+			existingWildcardNames.Insert(wildcardDNSName)
 			certName := wildcardCertName(wildcardDNSName)
 			cert, err := makeCert(route, []string{wildcardDNSName}, certName)
 			if err != nil {
@@ -105,6 +102,15 @@ func wildcardCertName(wildcardDNSName string) string {
 	return strings.Join(splits[1:], ".")
 }
 
+func GetDNSNames(route *v1alpha1.Route, tc *traffic.Config) []string {
+	dnsNames := []string{route.Status.Domain}
+	for name := range tc.Targets {
+		if name != traffic.DefaultTarget {
+			dnsNames = append(dnsNames, fmt.Sprintf("%s.%s", name, route.Status.Domain))
+		}
+	}
+	return dnsNames
+}
 func IsCertOwner(cert *networkingv1alpha1.Certificate, route *v1alpha1.Route) (bool, error) {
 	var routeKeys []string
 	if err := json.Unmarshal([]byte(cert.Annotations[serving.RouteNamespaceNameAnnotationKey]), &routeKeys); err != nil {

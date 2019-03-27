@@ -23,6 +23,7 @@ import (
 
 	"github.com/knative/pkg/apis/istio/v1alpha3"
 	"github.com/knative/serving/pkg/apis/networking/v1alpha1"
+	"github.com/knative/serving/pkg/reconciler/v1alpha1/clusteringress/resources/names"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/util/sets"
 )
@@ -84,6 +85,8 @@ func MakeServers(ci *v1alpha1.ClusterIngress) []v1alpha3.Server {
 				Mode:              v1alpha3.TLSModeSimple,
 				ServerCertificate: tls.ServerCertificate,
 				PrivateKey:        tls.PrivateKey,
+				CaCertificates:    "place-holder",
+				CredentialName:    names.TargetSecret(tls.SecretNamespace, tls.SecretName, ci),
 				// TODO(zhiminx): When Istio 1.1 is ready, set "credentialName" of TLS
 				// with the secret name.
 			},

@@ -42,9 +42,42 @@ func isClusterLocal(r *servingv1alpha1.Route) bool {
 	return strings.HasSuffix(r.Status.Domain, utils.GetClusterDomainName())
 }
 
+func MakeClusterIngressTLS(certs []*v1alpha1.Certificate, dnsNames []string) ([]v1alpha1.ClusterIngressTLS, error) {
+	certMap := make(map[string]*v1alpha1.Certificate)
+	for _, cert := range certs {
+		for _, dns := range cert.Spec.DNSNames {
+			certMap[dns] = cert
+		}
+	}
+	tls := make(map[*v1alpha1.Certificate][]string)
+	for _, dnsName := range dnsNames {
+		wildcardDNSName := wildcard(dnsName)
+		if cert, ok := certMap[dnsName]; ok {
+			tls[cert] = append(tls[cert], dnsName)
+		} else if cert, ok := certMap[wildcardDNSName]; ok {
+			tls[cert] = append(tls[cert], dnsName)
+		} else {
+			return nil, fmt.Errorf("Cannot find cert for DNS name %s", dnsName)
+		}
+	}
+	return convertToIngressTLS(tls), nil
+}
+
+func convertToIngressTLS(tls map[*v1alpha1.Certificate][]string) []v1alpha1.ClusterIngressTLS {
+	result := []v1alpha1.ClusterIngressTLS{}
+	for cert, hosts := range tls {
+		result = append(result, v1alpha1.ClusterIngressTLS{
+			Hosts:           hosts,
+			SecretName:      cert.Spec.SecretName,
+			SecretNamespace: cert.Namespace,
+		})
+	}
+	return result
+}
+
 // MakeClusterIngress creates ClusterIngress to set up routing rules. Such ClusterIngress specifies
 // which Hosts that it applies to, as well as the routing rules.
-func MakeClusterIngress(r *servingv1alpha1.Route, tc *traffic.Config, ingressClass string) *v1alpha1.ClusterIngress {
+func MakeClusterIngress(r *servingv1alpha1.Route, tc *traffic.Config, tls []v1alpha1.ClusterIngressTLS, ingressClass string) *v1alpha1.ClusterIngress {
 	ci := &v1alpha1.ClusterIngress{
 		ObjectMeta: metav1.ObjectMeta{
 			// As ClusterIngress resource is cluster-scoped,
@@ -56,7 +89,7 @@ func MakeClusterIngress(r *servingv1alpha1.Route, tc *traffic.Config, ingressCla
 			},
 			Annotations: r.ObjectMeta.Annotations,
 		},
-		Spec: makeClusterIngressSpec(r, tc.Targets),
+		Spec: makeClusterIngressSpec(r, tc.Targets, tls),
 	}
 	// Set the ingress class annotation.
 	if ci.ObjectMeta.Annotations == nil {
@@ -66,7 +99,7 @@ func MakeClusterIngress(r *servingv1alpha1.Route, tc *traffic.Config, ingressCla
 	return ci
 }
 
-func makeClusterIngressSpec(r *servingv1alpha1.Route, targets map[string]traffic.RevisionTargets) v1alpha1.IngressSpec {
+func makeClusterIngressSpec(r *servingv1alpha1.Route, targets map[string]traffic.RevisionTargets, tls []v1alpha1.ClusterIngressTLS) v1alpha1.IngressSpec {
 	// Domain should have been specified in route status
 	// before calling this func.
 	names := make([]string, 0, len(targets))
@@ -85,6 +118,7 @@ func makeClusterIngressSpec(r *servingv1alpha1.Route, targets map[string]traffic
 	spec := v1alpha1.IngressSpec{
 		Rules:      rules,
 		Visibility: v1alpha1.IngressVisibilityExternalIP,
+		TLS:        tls,
 	}
 	if isClusterLocal(r) {
 		spec.Visibility = v1alpha1.IngressVisibilityClusterLocal

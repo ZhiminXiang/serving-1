@@ -288,8 +288,10 @@ func (c *Reconciler) reconcile(ctx context.Context, r *v1alpha1.Route) error {
 
 	enableAutoTLS := true
 	enableWildcardCert := true
+	tls := []networkingv1alpha1.ClusterIngressTLS{}
 	if enableAutoTLS {
-		desiredCerts, err := resources.MakeCertificates(ctx, r, traffic, enableWildcardCert)
+		dnsNames := resources.GetDNSNames(r, traffic)
+		desiredCerts, err := resources.MakeCertificates(ctx, r, dnsNames, enableWildcardCert)
 		if err != nil {
 			return err
 		}
@@ -300,10 +302,15 @@ func (c *Reconciler) reconcile(ctx context.Context, r *v1alpha1.Route) error {
 		}
 		logger.Infof("reconcile certificate result %q", desiredCerts)
 		r.Status.PropagateCertificateStatus(desiredCerts)
+
+		tls, err = resources.MakeClusterIngressTLS(desiredCerts, dnsNames)
+		if err != nil {
+			return err
+		}
 	}
 
 	logger.Info("Creating ClusterIngress.")
-	desired := resources.MakeClusterIngress(r, traffic, ingressClassForRoute(ctx, r))
+	desired := resources.MakeClusterIngress(r, traffic, tls, ingressClassForRoute(ctx, r))
 	clusterIngress, err := c.reconcileClusterIngress(ctx, r, desired)
 	if err != nil {
 		return err
