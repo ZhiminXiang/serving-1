@@ -43,9 +43,7 @@ data:
 
     # These are example settings of domain.
     # example.org will be used for routes having app=nonprofit.
-    example.org: |
-      selector:
-        app: nonprofit
+  35.188.160.152.xip.io: |
     
     # Routes having domain suffix of 'svc.cluster.local' will not be exposed
     # through Ingress. You can define your own label selector to assign that
