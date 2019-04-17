@@ -198,14 +198,16 @@ func (c *Reconciler) reconcile(ctx context.Context, ci *v1alpha1.ClusterIngress)
 
 	ci.Status.InitializeConditions()
 	gatewayNames := gatewayNamesFromContext(ctx, ci)
-	vs := resources.MakeVirtualService(ci, gatewayNames)
+	virtualservices := resources.MakeVirtualServices(ci, gatewayNames)
 
 	logger.Infof("Reconciling clusterIngress :%v", ci)
 	logger.Info("Creating/Updating VirtualService")
-	if err := c.reconcileVirtualService(ctx, ci, vs); err != nil {
-		// TODO(lichuqiang): should we explicitly mark the ingress as unready
-		// when error reconciling VirtualService?
-		return err
+	for _, vs := range virtualservices {
+		if err := c.reconcileVirtualService(ctx, ci, vs); err != nil {
+			// TODO(lichuqiang): should we explicitly mark the ingress as unready
+			// when error reconciling VirtualService?
+			return err
+		}
 	}
 
 	// As underlying network programming (VirtualService now) is stateless,

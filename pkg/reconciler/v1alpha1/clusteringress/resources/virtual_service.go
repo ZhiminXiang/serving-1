@@ -37,18 +37,26 @@ import (
 	"github.com/knative/serving/pkg/utils"
 )
 
-// MakeVirtualService creates an Istio VirtualService as network programming.
+// MakeVirtualServices creates an Istio VirtualService as network programming.
 // Such VirtualService specifies which Gateways and Hosts that it applies to,
 // as well as the routing rules.
-func MakeVirtualService(ci *v1alpha1.ClusterIngress, gateways []string) *v1alpha3.VirtualService {
+func MakeVirtualServices(ci *v1alpha1.ClusterIngress, gateways []string) []*v1alpha3.VirtualService {
+	return []*v1alpha3.VirtualService{
+		makeVirtualService(ci, gateways, names.VirtualService(ci), getHosts(ci, true)),
+		// For mesh, we don't expand the hosts as Istio will automatically expand them.
+		makeVirtualService(ci, []string{"mesh"}, fmt.Sprintf("%s-mesh", names.VirtualService(ci)), getHosts(ci, false)),
+	}
+}
+
+func makeVirtualService(ci *v1alpha1.ClusterIngress, gateways []string, vsName string, hosts []string) *v1alpha3.VirtualService {
 	vs := &v1alpha3.VirtualService{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:            names.VirtualService(ci),
+			Name:            vsName,
 			Namespace:       system.Namespace(),
 			OwnerReferences: []metav1.OwnerReference{*kmeta.NewControllerRef(ci)},
 			Annotations:     ci.ObjectMeta.Annotations,
 		},
-		Spec: *makeVirtualServiceSpec(ci, gateways),
+		Spec: *makeVirtualServiceSpec(ci, gateways, hosts),
 	}
 
 	// Populate the ClusterIngress labels.
@@ -64,16 +72,17 @@ func MakeVirtualService(ci *v1alpha1.ClusterIngress, gateways []string) *v1alpha
 	return vs
 }
 
-func makeVirtualServiceSpec(ci *v1alpha1.ClusterIngress, gateways []string) *v1alpha3.VirtualServiceSpec {
+func makeVirtualServiceSpec(ci *v1alpha1.ClusterIngress, gateways []string, hosts []string) *v1alpha3.VirtualServiceSpec {
 	spec := v1alpha3.VirtualServiceSpec{
 		// We want to connect to two Gateways: the Knative shared
 		// Gateway, and the 'mesh' Gateway.  The former provides
 		// access from outside of the cluster, and the latter provides
 		// access for services from inside the cluster.
-		Gateways: append(gateways, "mesh"),
-		Hosts:    getHosts(ci),
+		Gateways: gateways,
+		Hosts:    hosts,
 	}
 
+	// We expand hosts only for mesh related VirtualService.
 	for _, rule := range ci.Spec.Rules {
 		hosts := rule.Hosts
 		for _, p := range rule.HTTP.Paths {
@@ -168,10 +177,13 @@ func hostRegExp(host string) string {
 	return fmt.Sprintf("^%s%s$", regexp.QuoteMeta(host), portMatch)
 }
 
-func getHosts(ci *v1alpha1.ClusterIngress) []string {
+func getHosts(ci *v1alpha1.ClusterIngress, expand bool) []string {
 	hosts := make([]string, 0, len(ci.Spec.Rules))
 	for _, rule := range ci.Spec.Rules {
 		hosts = append(hosts, rule.Hosts...)
+	}
+	if expand {
+		hosts = expandedHosts(hosts)
 	}
 	return dedup(hosts)
 }
