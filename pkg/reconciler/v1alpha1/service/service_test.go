@@ -23,6 +23,7 @@ import (
 	duckv1beta1 "github.com/knative/pkg/apis/duck/v1beta1"
 	fakesharedclientset "github.com/knative/pkg/client/clientset/versioned/fake"
 	"github.com/knative/pkg/controller"
+	logtesting "github.com/knative/pkg/logging/testing"
 	"github.com/knative/serving/pkg/apis/serving/v1alpha1"
 	"github.com/knative/serving/pkg/apis/serving/v1beta1"
 	fakeclientset "github.com/knative/serving/pkg/client/clientset/versioned/fake"
@@ -35,6 +36,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	fakekubeclientset "k8s.io/client-go/kubernetes/fake"
 	clientgotesting "k8s.io/client-go/testing"
+
+	. "github.com/knative/pkg/reconciler/testing"
 )
 
 // This is heavily based on the way the OpenShift Ingress controller tests its reconciliation method.
@@ -53,18 +56,24 @@ func TestReconcile(t *testing.T) {
 		},
 		Key: "foo/delete-pending",
 	}, {
-		Name: "incomplete service",
+		Name: "inline - create route and service",
 		Objects: []runtime.Object{
-			// There is no spec.{runLatest,pinned} in this Service to
-			// trigger the error condition.
-			Service("incomplete", "foo", WithInitSvcConditions),
+			Service("run-latest", "foo", WithInlineRollout),
 		},
-		Key:     "foo/incomplete",
-		WantErr: true,
+		Key: "foo/run-latest",
+		WantCreates: []metav1.Object{
+			config("run-latest", "foo", WithInlineRollout),
+			route("run-latest", "foo", WithInlineRollout),
+		},
+		WantStatusUpdates: []clientgotesting.UpdateActionImpl{{
+			Object: Service("run-latest", "foo", WithInlineRollout,
+				// The first reconciliation will initialize the status conditions.
+				WithInitSvcConditions),
+		}},
 		WantEvents: []string{
-			Eventf(corev1.EventTypeWarning, "CreationFailed", "Failed to create Configuration %q: %v",
-				"incomplete", "malformed Service: MakeConfiguration requires one of runLatest, pinned, or release must be present"),
-			Eventf(corev1.EventTypeWarning, "InternalError", "malformed Service: MakeConfiguration requires one of runLatest, pinned, or release must be present"),
+			Eventf(corev1.EventTypeNormal, "Created", "Created Configuration %q", "run-latest"),
+			Eventf(corev1.EventTypeNormal, "Created", "Created Route %q", "run-latest"),
+			Eventf(corev1.EventTypeNormal, "Updated", "Updated Service %q", "run-latest"),
 		},
 	}, {
 		Name: "runLatest - create route and service",
@@ -706,8 +715,13 @@ func TestReconcile(t *testing.T) {
 		},
 		Key:     "foo/bad-config-update",
 		WantErr: true,
+		WantUpdates: []clientgotesting.UpdateActionImpl{{
+			// Use WithInitSvcConditions as a HACK to create the
+			// empty Configuration.
+			Object: config("bad-config-update", "foo", WithInitSvcConditions),
+		}},
 		WantEvents: []string{
-			Eventf(corev1.EventTypeWarning, "InternalError", "malformed Service: MakeConfiguration requires one of runLatest, pinned, or release must be present"),
+			Eventf(corev1.EventTypeWarning, "InternalError", "missing field(s): spec"),
 		},
 	}, {
 		Name: "runLatest - route creation failure",
@@ -1049,7 +1063,7 @@ func TestReconcile(t *testing.T) {
 		},
 	}}
 
-	defer ClearAllLoggers()
+	defer logtesting.ClearAll()
 	table.Test(t, MakeFactory(func(listers *Listers, opt reconciler.Options) controller.Reconciler {
 		return &Reconciler{
 			Base:                reconciler.NewBase(opt, controllerAgentName),
@@ -1062,7 +1076,7 @@ func TestReconcile(t *testing.T) {
 }
 
 func TestNew(t *testing.T) {
-	defer ClearAllLoggers()
+	defer logtesting.ClearAll()
 	kubeClient := fakekubeclientset.NewSimpleClientset()
 	sharedClient := fakesharedclientset.NewSimpleClientset()
 	servingClient := fakeclientset.NewSimpleClientset()
@@ -1077,7 +1091,7 @@ func TestNew(t *testing.T) {
 		KubeClientSet:    kubeClient,
 		SharedClientSet:  sharedClient,
 		ServingClientSet: servingClient,
-		Logger:           TestLogger(t),
+		Logger:           logtesting.TestLogger(t),
 	}, serviceInformer, configurationInformer, revisionInformer, routeInformer)
 
 	if c == nil {

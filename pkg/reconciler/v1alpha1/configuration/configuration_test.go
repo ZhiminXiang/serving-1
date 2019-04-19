@@ -25,9 +25,11 @@ import (
 	duckv1beta1 "github.com/knative/pkg/apis/duck/v1beta1"
 	"github.com/knative/pkg/configmap"
 	"github.com/knative/pkg/controller"
+	logtesting "github.com/knative/pkg/logging/testing"
 	"github.com/knative/pkg/ptr"
 	"github.com/knative/serving/pkg/apis/serving"
 	"github.com/knative/serving/pkg/apis/serving/v1alpha1"
+	"github.com/knative/serving/pkg/apis/serving/v1beta1"
 	"github.com/knative/serving/pkg/gc"
 	"github.com/knative/serving/pkg/reconciler"
 	"github.com/knative/serving/pkg/reconciler/v1alpha1/configuration/config"
@@ -39,6 +41,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	clientgotesting "k8s.io/client-go/testing"
 
+	. "github.com/knative/pkg/reconciler/testing"
 	. "github.com/knative/serving/pkg/reconciler/v1alpha1/testing"
 )
 
@@ -46,7 +49,9 @@ var revisionSpec = v1alpha1.RevisionSpec{
 	Container: &corev1.Container{
 		Image: "busybox",
 	},
-	TimeoutSeconds: ptr.Int64(60),
+	RevisionSpec: v1beta1.RevisionSpec{
+		TimeoutSeconds: ptr.Int64(60),
+	},
 }
 
 // This is heavily based on the way the OpenShift Ingress controller tests its reconciliation method.
@@ -464,7 +469,7 @@ func TestReconcile(t *testing.T) {
 		Key: "foo/double-trouble",
 	}}
 
-	defer ClearAllLoggers()
+	defer logtesting.ClearAll()
 	table.Test(t, MakeFactory(func(listers *Listers, opt reconciler.Options) controller.Reconciler {
 		return &Reconciler{
 			Base:                reconciler.NewBase(opt, controllerAgentName),
@@ -602,7 +607,7 @@ func TestGCReconcile(t *testing.T) {
 		Key: "foo/keep-all",
 	}}
 
-	defer ClearAllLoggers()
+	defer logtesting.ClearAll()
 	table.Test(t, MakeFactory(func(listers *Listers, opt reconciler.Options) controller.Reconciler {
 		return &Reconciler{
 			Base:                reconciler.NewBase(opt, controllerAgentName),
