@@ -93,4 +93,18 @@ type CertificateStatus struct {
 	// by this resource in spec.secretName.
 	// +optional
 	NotAfter *metav1.Time `json:"notAfter,omitempty"`
+
+	Challenges []Challenge `json:"challenges,omitempty"`
+}
+
+type Challenge struct {
+	DNSName string `json:"dnsName"`
+
+	HTTP01 *HTTP01Challenge `json:"http01,omitempty"`
+}
+
+type HTTP01Challenge struct {
+	Service string `json:"service"`
+
+	Path string `json:"path"`
 }

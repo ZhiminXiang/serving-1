@@ -21,6 +21,10 @@ import (
 	"fmt"
 	"reflect"
 
+	"k8s.io/apimachinery/pkg/labels"
+
+	"hash/adler32"
+
 	cmv1alpha1 "github.com/jetstack/cert-manager/pkg/apis/certmanager/v1alpha1"
 	certmanagerclientset "github.com/jetstack/cert-manager/pkg/client/clientset/versioned"
 	certmanagerinformers "github.com/jetstack/cert-manager/pkg/client/informers/externalversions/certmanager/v1alpha1"
@@ -31,14 +35,18 @@ import (
 	"github.com/knative/serving/pkg/apis/networking/v1alpha1"
 	informers "github.com/knative/serving/pkg/client/informers/externalversions/networking/v1alpha1"
 	listers "github.com/knative/serving/pkg/client/listers/networking/v1alpha1"
+	"github.com/knative/serving/pkg/network"
 	"github.com/knative/serving/pkg/reconciler"
 	"github.com/knative/serving/pkg/reconciler/certificate/config"
 	"github.com/knative/serving/pkg/reconciler/certificate/resources"
 	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrs "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	corev1informers "k8s.io/client-go/informers/core/v1"
+	corev1listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 )
 
@@ -60,9 +68,10 @@ type Reconciler struct {
 	// listers index properties about resources
 	knCertificateLister listers.CertificateLister
 	cmCertificateLister certmanagerlisters.CertificateLister
+	orderLister         certmanagerlisters.OrderLister
 	certManagerClient   certmanagerclientset.Interface
-
-	configStore configStore
+	serviceLister       corev1listers.ServiceLister
+	configStore         configStore
 }
 
 // NewController initializes the controller and is called by the generated code
@@ -71,12 +80,16 @@ func NewController(
 	opt reconciler.Options,
 	knCertificateInformer informers.CertificateInformer,
 	cmCertificateInformer certmanagerinformers.CertificateInformer,
+	cmOrderInformer certmanagerinformers.OrderInformer,
+	serviceInformer corev1informers.ServiceInformer,
 	certManagerClient certmanagerclientset.Interface,
 ) *controller.Impl {
 	c := &Reconciler{
 		Base:                reconciler.NewBase(opt, controllerAgentName),
 		knCertificateLister: knCertificateInformer.Lister(),
 		cmCertificateLister: cmCertificateInformer.Lister(),
+		orderLister:         cmOrderInformer.Lister(),
+		serviceLister:       serviceInformer.Lister(),
 		certManagerClient:   certManagerClient,
 	}
 
@@ -94,6 +107,9 @@ func NewController(
 		UpdateFunc: controller.PassNew(impl.EnqueueControllerOf),
 		DeleteFunc: impl.EnqueueControllerOf,
 	})
+
+	cmOrderInformer.Informer().AddEventHandler(reconciler.Handler(
+		impl.EnqueueLabelOfNamespaceScopedResource("", "acme.cert-manager.io/certificate-name")))
 
 	c.Logger.Info("Setting up ConfigMap receivers")
 	resyncCertOnCertManagerconfigChange := configmap.TypeFilter(&config.CertManagerConfig{})(func(string, interface{}) {
@@ -166,6 +182,39 @@ func (c *Reconciler) reconcile(ctx context.Context, knCert *v1alpha1.Certificate
 		return err
 	}
 
+	order, err := c.orderLister.Orders(cmCert.Namespace).List(labels.Set(
+		map[string]string{
+			"acme.cert-manager.io/certificate-name": cmCert.Name,
+		}).AsSelector())
+	if err != nil {
+		return err
+	}
+	if len(order) == 0 {
+		return fmt.Errorf("No order is found for certificate %s/%s", cmCert.Namespace, cmCert.Name)
+	}
+
+	challenges := []v1alpha1.Challenge{}
+	for _, ch := range order[0].Status.Challenges {
+		if ch.Type != "http-01" {
+			continue
+		}
+		svc, err := c.getHTTP01ChallengeSvc(ch.DNSName, cmCert.Namespace)
+		if err != nil {
+			return err
+		}
+		if svc == nil {
+			return fmt.Errorf("No challenge service for the cert %s/%s", cmCert.Namespace, cmCert.Name)
+		}
+		challenges = append(challenges, v1alpha1.Challenge{
+			DNSName: ch.DNSName,
+			HTTP01: &v1alpha1.HTTP01Challenge{
+				Service: fmt.Sprintf("%s.%s.%s", svc.Name, svc.Namespace, network.GetClusterDomainName()),
+				Path:    fmt.Sprintf("/.well-known/acme-challenge/%s", ch.Token),
+			},
+		})
+	}
+	knCert.Status.Challenges = challenges
+
 	knCert.Status.NotAfter = cmCert.Status.NotAfter
 	knCert.Status.ObservedGeneration = knCert.Generation
 	// Propagate cert-manager Certificate status to Knative Certificate.
@@ -181,6 +230,21 @@ func (c *Reconciler) reconcile(ctx context.Context, knCert *v1alpha1.Certificate
 		knCert.Status.MarkNotReady(cmCertReadyCondition.Reason, cmCertReadyCondition.Message)
 	}
 	return nil
+}
+
+func (c *Reconciler) getHTTP01ChallengeSvc(domain, certNamespace string) (*v1.Service, error) {
+	domainHash := fmt.Sprintf("%d", adler32.Checksum([]byte(domain)))
+	svc, err := c.serviceLister.Services(certNamespace).List(labels.Set(
+		map[string]string{
+			"certmanager.k8s.io/acme-http-domain": domainHash,
+		}).AsSelector())
+	if apierrs.IsNotFound(err) || len(svc) == 0 {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return svc[0], nil
 }
 
 func (c *Reconciler) reconcileCMCertificate(ctx context.Context, knCert *v1alpha1.Certificate, desired *cmv1alpha1.Certificate) (*cmv1alpha1.Certificate, error) {

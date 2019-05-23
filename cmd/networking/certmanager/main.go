@@ -80,13 +80,17 @@ func main() {
 
 	knCertInformer := servingInformerFactory.Networking().V1alpha1().Certificates()
 	cmCertInformer := cmCertInformerFactory.Certmanager().V1alpha1().Certificates()
+	cmOrderInformer := cmCertInformerFactory.Certmanager().V1alpha1().Orders()
 	configMapInformer := kubeInformerFactory.Core().V1().ConfigMaps()
+	serviceInformer := kubeInformerFactory.Core().V1().Services()
 
 	// Build our controller
 	certificateController := certificate.NewController(
 		opt,
 		knCertInformer,
 		cmCertInformer,
+		cmOrderInformer,
+		serviceInformer,
 		certManagerClient,
 	)
 
@@ -102,6 +106,8 @@ func main() {
 		stopCh,
 		knCertInformer.Informer(),
 		cmCertInformer.Informer(),
+		cmOrderInformer.Informer(),
+		serviceInformer.Informer(),
 		configMapInformer.Informer(),
 	); err != nil {
 		logger.Fatalw("Failed to start informers", zap.Error(err))
