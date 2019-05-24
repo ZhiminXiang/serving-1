@@ -182,36 +182,12 @@ func (c *Reconciler) reconcile(ctx context.Context, knCert *v1alpha1.Certificate
 		return err
 	}
 
-	order, err := c.orderLister.Orders(cmCert.Namespace).List(labels.Set(
-		map[string]string{
-			"acme.cert-manager.io/certificate-name": cmCert.Name,
-		}).AsSelector())
-	if err != nil {
-		return err
-	}
-	if len(order) == 0 {
-		return fmt.Errorf("No order is found for certificate %s/%s", cmCert.Namespace, cmCert.Name)
-	}
-
 	challenges := []v1alpha1.Challenge{}
-	for _, ch := range order[0].Status.Challenges {
-		if ch.Type != "http-01" {
-			continue
-		}
-		svc, err := c.getHTTP01ChallengeSvc(ch.DNSName, cmCert.Namespace)
+	if resources.GetReadyCondition(cmCert).Status != cmv1alpha1.ConditionTrue {
+		challenges, err = c.getChallenges(cmCert)
 		if err != nil {
 			return err
 		}
-		if svc == nil {
-			return fmt.Errorf("No challenge service for the cert %s/%s", cmCert.Namespace, cmCert.Name)
-		}
-		challenges = append(challenges, v1alpha1.Challenge{
-			DNSName: ch.DNSName,
-			HTTP01: &v1alpha1.HTTP01Challenge{
-				Service: fmt.Sprintf("%s.%s.%s", svc.Name, svc.Namespace, network.GetClusterDomainName()),
-				Path:    fmt.Sprintf("/.well-known/acme-challenge/%s", ch.Token),
-			},
-		})
 	}
 	knCert.Status.Challenges = challenges
 
@@ -230,6 +206,41 @@ func (c *Reconciler) reconcile(ctx context.Context, knCert *v1alpha1.Certificate
 		knCert.Status.MarkNotReady(cmCertReadyCondition.Reason, cmCertReadyCondition.Message)
 	}
 	return nil
+}
+
+func (c *Reconciler) getChallenges(cmCert *cmv1alpha1.Certificate) ([]v1alpha1.Challenge, error) {
+	order, err := c.orderLister.Orders(cmCert.Namespace).List(labels.Set(
+		map[string]string{
+			"acme.cert-manager.io/certificate-name": cmCert.Name,
+		}).AsSelector())
+	if err != nil {
+		return nil, err
+	}
+	if len(order) == 0 {
+		return nil, fmt.Errorf("No order is found for certificate %s/%s", cmCert.Namespace, cmCert.Name)
+	}
+
+	challenges := []v1alpha1.Challenge{}
+	for _, ch := range order[0].Status.Challenges {
+		if ch.Type != "http-01" {
+			continue
+		}
+		svc, err := c.getHTTP01ChallengeSvc(ch.DNSName, cmCert.Namespace)
+		if err != nil {
+			return nil, err
+		}
+		if svc == nil {
+			return nil, fmt.Errorf("No challenge service for the cert %s/%s", cmCert.Namespace, cmCert.Name)
+		}
+		challenges = append(challenges, v1alpha1.Challenge{
+			DNSName: ch.DNSName,
+			HTTP01: &v1alpha1.HTTP01Challenge{
+				Service: fmt.Sprintf("%s.%s.%s", svc.Name, svc.Namespace, network.GetClusterDomainName()),
+				Path:    fmt.Sprintf("/.well-known/acme-challenge/%s", ch.Token),
+			},
+		})
+	}
+	return challenges, nil
 }
 
 func (c *Reconciler) getHTTP01ChallengeSvc(domain, certNamespace string) (*v1.Service, error) {
