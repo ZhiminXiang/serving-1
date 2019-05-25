@@ -21,6 +21,7 @@ import (
 	duckv1beta1 "github.com/knative/pkg/apis/duck/v1beta1"
 	"github.com/knative/pkg/kmeta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
 // +genclient
@@ -104,7 +105,11 @@ type Challenge struct {
 }
 
 type HTTP01Challenge struct {
-	Service string `json:"service"`
+	ServiceName string `json:"service"`
+
+	ServiceNamespace string `json:"serviceNamespace`
+
+	ServicePort intstr.IntOrString `json:"servicePort`
 
 	Path string `json:"path"`
 }

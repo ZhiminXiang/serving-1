@@ -21,6 +21,8 @@ import (
 	"fmt"
 	"reflect"
 
+	"k8s.io/apimachinery/pkg/util/intstr"
+
 	"k8s.io/apimachinery/pkg/labels"
 
 	"hash/adler32"
@@ -35,7 +37,6 @@ import (
 	"github.com/knative/serving/pkg/apis/networking/v1alpha1"
 	informers "github.com/knative/serving/pkg/client/informers/externalversions/networking/v1alpha1"
 	listers "github.com/knative/serving/pkg/client/listers/networking/v1alpha1"
-	"github.com/knative/serving/pkg/network"
 	"github.com/knative/serving/pkg/reconciler"
 	"github.com/knative/serving/pkg/reconciler/certificate/config"
 	"github.com/knative/serving/pkg/reconciler/certificate/resources"
@@ -174,7 +175,7 @@ func (c *Reconciler) reconcile(ctx context.Context, knCert *v1alpha1.Certificate
 	knCert.SetDefaults(ctx)
 	knCert.Status.InitializeConditions()
 
-	logger.Info("Reconciling Cert-Manager certificate for Knative cert %s/%s.", knCert.Namespace, knCert.Name)
+	logger.Infof("Reconciling Cert-Manager certificate for Knative cert %s/%s.", knCert.Namespace, knCert.Name)
 	cmConfig := config.FromContext(ctx).CertManager
 	cmCert := resources.MakeCertManagerCertificate(cmConfig, knCert)
 	cmCert, err := c.reconcileCMCertificate(ctx, knCert, cmCert)
@@ -183,7 +184,8 @@ func (c *Reconciler) reconcile(ctx context.Context, knCert *v1alpha1.Certificate
 	}
 
 	challenges := []v1alpha1.Challenge{}
-	if resources.GetReadyCondition(cmCert).Status != cmv1alpha1.ConditionTrue {
+	cmCertReadyCondition := resources.GetReadyCondition(cmCert)
+	if cmCertReadyCondition != nil && cmCertReadyCondition.Status != cmv1alpha1.ConditionTrue {
 		challenges, err = c.getChallenges(cmCert)
 		if err != nil {
 			return err
@@ -194,7 +196,7 @@ func (c *Reconciler) reconcile(ctx context.Context, knCert *v1alpha1.Certificate
 	knCert.Status.NotAfter = cmCert.Status.NotAfter
 	knCert.Status.ObservedGeneration = knCert.Generation
 	// Propagate cert-manager Certificate status to Knative Certificate.
-	cmCertReadyCondition := resources.GetReadyCondition(cmCert)
+
 	switch {
 	case cmCertReadyCondition == nil:
 		knCert.Status.MarkUnknown(noCMConditionReason, noCMConditionMessage)
@@ -232,11 +234,16 @@ func (c *Reconciler) getChallenges(cmCert *cmv1alpha1.Certificate) ([]v1alpha1.C
 		if svc == nil {
 			return nil, fmt.Errorf("No challenge service for the cert %s/%s", cmCert.Namespace, cmCert.Name)
 		}
+		if len(svc.Spec.Ports) == 0 {
+			return nil, fmt.Errorf("No ports for cert challenge service %s/%s", svc.Namespace, svc.Name)
+		}
 		challenges = append(challenges, v1alpha1.Challenge{
 			DNSName: ch.DNSName,
 			HTTP01: &v1alpha1.HTTP01Challenge{
-				Service: fmt.Sprintf("%s.%s.%s", svc.Name, svc.Namespace, network.GetClusterDomainName()),
-				Path:    fmt.Sprintf("/.well-known/acme-challenge/%s", ch.Token),
+				ServiceName:      svc.Name,
+				ServiceNamespace: svc.Namespace,
+				ServicePort:      intstr.FromInt(int(svc.Spec.Ports[0].Port)),
+				Path:             fmt.Sprintf("/.well-known/acme-challenge/%s", ch.Token),
 			},
 		})
 	}

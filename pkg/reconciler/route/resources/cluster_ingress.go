@@ -27,6 +27,7 @@ import (
 	"github.com/knative/serving/pkg/activator"
 	"github.com/knative/serving/pkg/apis/networking"
 	"github.com/knative/serving/pkg/apis/networking/v1alpha1"
+	netv1alpha1 "github.com/knative/serving/pkg/apis/networking/v1alpha1"
 	"github.com/knative/serving/pkg/apis/serving"
 	servingv1alpha1 "github.com/knative/serving/pkg/apis/serving/v1alpha1"
 	"github.com/knative/serving/pkg/network"
@@ -52,11 +53,13 @@ func MakeClusterIngressTLS(cert *v1alpha1.Certificate, hostNames []string) v1alp
 
 // MakeClusterIngress creates ClusterIngress to set up routing rules. Such ClusterIngress specifies
 // which Hosts that it applies to, as well as the routing rules.
-func MakeClusterIngress(ctx context.Context, r *servingv1alpha1.Route, tc *traffic.Config, tls []v1alpha1.ClusterIngressTLS, ingressClass string) (*v1alpha1.ClusterIngress, error) {
+func MakeClusterIngress(ctx context.Context, r *servingv1alpha1.Route, tc *traffic.Config, tls []v1alpha1.ClusterIngressTLS, ingressClass string, http01challenges []*netv1alpha1.Challenge) (*v1alpha1.ClusterIngress, error) {
 	spec, err := makeClusterIngressSpec(ctx, r, tls, tc.Targets)
 	if err != nil {
 		return nil, err
 	}
+	appendChallengePaths(&spec, http01challenges)
+
 	return &v1alpha1.ClusterIngress{
 		ObjectMeta: metav1.ObjectMeta{
 			// As ClusterIngress resource is cluster-scoped,
@@ -72,6 +75,38 @@ func MakeClusterIngress(ctx context.Context, r *servingv1alpha1.Route, tc *traff
 		},
 		Spec: spec,
 	}, nil
+}
+
+func appendChallengePaths(spec *v1alpha1.IngressSpec, http01challenges []*netv1alpha1.Challenge) {
+	challengeMap := map[string]*netv1alpha1.HTTP01Challenge{}
+	for _, challenge := range http01challenges {
+		challengeMap[challenge.DNSName] = challenge.HTTP01
+	}
+
+	for i := range spec.Rules {
+		var challenge *netv1alpha1.HTTP01Challenge
+		for _, host := range spec.Rules[i].Hosts {
+			challenge = challengeMap[host]
+			if challenge != nil {
+				break
+			}
+		}
+		if challenge == nil {
+			continue
+		}
+		http01ChallengePath := netv1alpha1.HTTPClusterIngressPath{
+			Path: challenge.Path,
+			Splits: []netv1alpha1.ClusterIngressBackendSplit{{
+				ClusterIngressBackend: netv1alpha1.ClusterIngressBackend{
+					ServiceName:      challenge.ServiceName,
+					ServiceNamespace: challenge.ServiceNamespace,
+					ServicePort:      challenge.ServicePort,
+				},
+				Percent: 100,
+			}},
+		}
+		spec.Rules[i].HTTP.Paths = append([]netv1alpha1.HTTPClusterIngressPath{http01ChallengePath}, spec.Rules[i].HTTP.Paths...)
+	}
 }
 
 func makeClusterIngressSpec(ctx context.Context, r *servingv1alpha1.Route, tls []v1alpha1.ClusterIngressTLS, targets map[string]traffic.RevisionTargets) (v1alpha1.IngressSpec, error) {

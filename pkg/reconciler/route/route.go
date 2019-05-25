@@ -323,6 +323,7 @@ func (c *Reconciler) reconcile(ctx context.Context, r *v1alpha1.Route) error {
 	}
 
 	tls := []netv1alpha1.ClusterIngressTLS{}
+	http01Challenges := []*netv1alpha1.Challenge{}
 	if config.FromContext(ctx).Network.AutoTLS && !resources.IsClusterLocal(r) {
 		allDomains, err := domains.GetAllDomains(ctx, r, getTrafficNames(traffic.Targets))
 		if err != nil {
@@ -348,13 +349,18 @@ func (c *Reconciler) reconcile(ctx context.Context, r *v1alpha1.Route) error {
 				Host:   host,
 			}
 			setTargetsScheme(&r.Status, "http")
+			for _, challenge := range cert.Status.Challenges {
+				if challenge.HTTP01 != nil {
+					http01Challenges = append(http01Challenges, &challenge)
+				}
+			}
 		}
 
 		tls = append(tls, resources.MakeClusterIngressTLS(cert, allDomains))
 	}
 
 	logger.Info("Creating ClusterIngress.")
-	desired, err := resources.MakeClusterIngress(ctx, r, traffic, tls, ingressClassForRoute(ctx, r))
+	desired, err := resources.MakeClusterIngress(ctx, r, traffic, tls, ingressClassForRoute(ctx, r), http01Challenges)
 	if err != nil {
 		return err
 	}
