@@ -105,11 +105,11 @@ type Challenge struct {
 }
 
 type HTTP01Challenge struct {
-	ServiceName string `json:"service"`
+	ServiceName string `json:"serviceName"`
 
-	ServiceNamespace string `json:"serviceNamespace`
+	ServiceNamespace string `json:"serviceNamespace"`
 
-	ServicePort intstr.IntOrString `json:"servicePort`
+	ServicePort intstr.IntOrString `json:"servicePort"`
 
 	Path string `json:"path"`
 }
