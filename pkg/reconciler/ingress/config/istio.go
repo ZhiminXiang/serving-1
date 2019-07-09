@@ -39,6 +39,10 @@ const (
 
 	// MeshGatewayName is the name of the special 'mesh' Istio Gateway.
 	MeshGatewayName = "mesh"
+
+	// ReconcileGatewayKey the is the name of the configuration entry that specifies
+	// reconciling public Istio Gateways or not.
+	ReconcileGatewayKey = "reconcilePublicGateway"
 )
 
 var (
@@ -68,6 +72,8 @@ type Istio struct {
 
 	// LocalGateway specifies the gateway urls for public & private ClusterIngress.
 	LocalGateways []Gateway
+
+	ReconcilePublicGateway bool
 }
 
 func parseGateways(configMap *corev1.ConfigMap, prefix string) ([]Gateway, error) {
@@ -112,9 +118,11 @@ func NewIstioFromConfigMap(configMap *corev1.ConfigMap) (*Istio, error) {
 	if err != nil {
 		return nil, err
 	}
+	reconcileGateway := strings.ToLower(configMap.Data[ReconcileGatewayKey]) == "enabled"
 	return &Istio{
-		IngressGateways: gateways,
-		LocalGateways:   localGateways,
+		IngressGateways:        gateways,
+		LocalGateways:          localGateways,
+		ReconcilePublicGateway: reconcileGateway,
 	}, nil
 }
 

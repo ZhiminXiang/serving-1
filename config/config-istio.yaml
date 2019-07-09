@@ -57,3 +57,9 @@ data:
     # To use only Istio service mesh and no cluster-local-gateway, replace
     # all local-gateway.* entries the following entry.
     local-gateway.mesh: "mesh"
+
+    # Feature flag to enable reconciling public Istio Gateways defined above (e.g. knative-ingress-gateway).
+    # When auto TLS feature is turned on, reconcilePublicGateway will be automatically enforced to true.
+    # 1. Enabled: enabling reconciling public gateways.
+    # 2. Disabled: disabling reconciling public gateways.
+    reconcilePublicGateway: "Disabled"

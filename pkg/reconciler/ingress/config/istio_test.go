@@ -140,3 +140,57 @@ func TestGatewayConfiguration(t *testing.T) {
 		})
 	}
 }
+
+func TestReconcileGatewayConfiguration(t *testing.T) {
+	cases := []struct {
+		name   string
+		want   bool
+		config *corev1.ConfigMap
+	}{{
+		name: "enable ReconcilePublicGateway",
+		want: true,
+		config: &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: system.Namespace(),
+				Name:      IstioConfigName,
+			},
+			Data: map[string]string{
+				"reconcilePublicGateway": "Enabled",
+			},
+		},
+	}, {
+		name: "disable ReconcilePublicGateway",
+		want: false,
+		config: &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: system.Namespace(),
+				Name:      IstioConfigName,
+			},
+			Data: map[string]string{
+				"reconcilePublicGateway": "Disabled",
+			},
+		},
+	}, {
+		name: "disable by default",
+		want: false,
+		config: &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: system.Namespace(),
+				Name:      IstioConfigName,
+			},
+			Data: map[string]string{},
+		},
+	}}
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			istio, err := NewIstioFromConfigMap(tt.config)
+			if err != nil {
+				t.Fatalf("Test: %q; NewIstioFromConfigMap() error = %v", tt.name, err)
+			}
+			if tt.want != istio.ReconcilePublicGateway {
+				t.Fatalf("Unexpected result (-want %t, +got %t)", tt.want, istio.ReconcilePublicGateway)
+			}
+		})
+	}
+}

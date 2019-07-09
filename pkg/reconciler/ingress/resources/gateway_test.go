@@ -74,15 +74,6 @@ var gateway = v1alpha3.Gateway{
 	},
 }
 
-var httpServer = v1alpha3.Server{
-	Hosts: []string{"*"},
-	Port: v1alpha3.Port{
-		Name:     httpServerPortName,
-		Number:   80,
-		Protocol: v1alpha3.ProtocolHTTP,
-	},
-}
-
 var gatewayWithPlaceholderServer = v1alpha3.Gateway{
 	Spec: v1alpha3.GatewaySpec{
 		Servers: []v1alpha3.Server{placeholderServer},
@@ -94,6 +85,9 @@ var clusterIngress = v1alpha1.ClusterIngress{
 		Name: "clusteringress",
 	},
 	Spec: v1alpha1.IngressSpec{
+		Rules: []v1alpha1.IngressRule{{
+			Hosts: []string{"host1.example.com"},
+		}},
 		TLS: []v1alpha1.IngressTLS{{
 			Hosts:             []string{"host1.example.com"},
 			SecretName:        "secret0",
@@ -125,29 +119,13 @@ func TestGetServers(t *testing.T) {
 	}
 }
 
-func TestGetHTTPServer(t *testing.T) {
-	newGateway := gateway
-	newGateway.Spec.Servers = append(newGateway.Spec.Servers, httpServer)
-	server := GetHTTPServer(&newGateway)
-	expected := v1alpha3.Server{
-		Hosts: []string{"*"},
-		Port: v1alpha3.Port{
-			Name:     httpServerPortName,
-			Number:   80,
-			Protocol: v1alpha3.ProtocolHTTP,
-		},
-	}
-	if diff := cmp.Diff(expected, *server); diff != "" {
-		t.Errorf("Unexpected server (-want +got): %v", diff)
-	}
-}
-
 func TestMakeServers(t *testing.T) {
 	cases := []struct {
 		name                    string
 		ci                      *v1alpha1.ClusterIngress
 		gatewayServiceNamespace string
 		originSecrets           map[string]*corev1.Secret
+		httpProtocol            network.HTTPProtocol
 		expected                []v1alpha3.Server
 		wantErr                 bool
 	}{{
@@ -156,6 +134,7 @@ func TestMakeServers(t *testing.T) {
 		// gateway service namespace is "istio-system", while the secret namespace is system.Namespace()("knative-testing").
 		gatewayServiceNamespace: "istio-system",
 		originSecrets:           originSecrets,
+		httpProtocol:            network.HTTPDisabled,
 		expected: []v1alpha3.Server{{
 			Hosts: []string{"host1.example.com"},
 			Port: v1alpha3.Port{
@@ -176,6 +155,7 @@ func TestMakeServers(t *testing.T) {
 		// gateway service namespace and the secret namespace are both in system.Namespace().
 		gatewayServiceNamespace: system.Namespace(),
 		originSecrets:           originSecrets,
+		httpProtocol:            network.HTTPDisabled,
 		expected: []v1alpha3.Server{{
 			Hosts: []string{"host1.example.com"},
 			Port: v1alpha3.Port{
@@ -191,6 +171,65 @@ func TestMakeServers(t *testing.T) {
 			},
 		}},
 	}, {
+		name: "enable HTTP Server",
+		ci:   &clusterIngress,
+		// gateway service namespace and the secret namespace are both in system.Namespace().
+		gatewayServiceNamespace: system.Namespace(),
+		originSecrets:           originSecrets,
+		httpProtocol:            network.HTTPEnabled,
+		expected: []v1alpha3.Server{{
+			Hosts: []string{"host1.example.com"},
+			Port: v1alpha3.Port{
+				Name:     "clusteringress:0",
+				Number:   443,
+				Protocol: v1alpha3.ProtocolHTTPS,
+			},
+			TLS: &v1alpha3.TLSOptions{
+				Mode:              v1alpha3.TLSModeSimple,
+				ServerCertificate: "tls.crt",
+				PrivateKey:        "tls.key",
+				CredentialName:    "secret0",
+			},
+		}, {
+			Hosts: []string{"host1.example.com"},
+			Port: v1alpha3.Port{
+				Name:     "clusteringress:1",
+				Number:   80,
+				Protocol: v1alpha3.ProtocolHTTP,
+			},
+		}},
+	}, {
+		name: "enable HTTP Server with HTTPS redirect",
+		ci:   &clusterIngress,
+		// gateway service namespace and the secret namespace are both in system.Namespace().
+		gatewayServiceNamespace: system.Namespace(),
+		originSecrets:           originSecrets,
+		httpProtocol:            network.HTTPRedirected,
+		expected: []v1alpha3.Server{{
+			Hosts: []string{"host1.example.com"},
+			Port: v1alpha3.Port{
+				Name:     "clusteringress:0",
+				Number:   443,
+				Protocol: v1alpha3.ProtocolHTTPS,
+			},
+			TLS: &v1alpha3.TLSOptions{
+				Mode:              v1alpha3.TLSModeSimple,
+				ServerCertificate: "tls.crt",
+				PrivateKey:        "tls.key",
+				CredentialName:    "secret0",
+			},
+		}, {
+			Hosts: []string{"host1.example.com"},
+			Port: v1alpha3.Port{
+				Name:     "clusteringress:1",
+				Number:   80,
+				Protocol: v1alpha3.ProtocolHTTP,
+			},
+			TLS: &v1alpha3.TLSOptions{
+				HTTPSRedirect: true,
+			},
+		}},
+	}, {
 		name:                    "error to make servers because of incorrect originSecrets",
 		ci:                      &clusterIngress,
 		gatewayServiceNamespace: "istio-system",
@@ -199,57 +238,12 @@ func TestMakeServers(t *testing.T) {
 	}}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			servers, err := MakeServers(c.ci, c.gatewayServiceNamespace, c.originSecrets)
+			servers, err := MakeServers(c.ci, c.gatewayServiceNamespace, c.originSecrets, c.httpProtocol)
 			if (err != nil) != c.wantErr {
 				t.Fatalf("Test: %s; MakeServers error = %v, WantErr %v", c.name, err, c.wantErr)
 			}
 			if diff := cmp.Diff(c.expected, servers); diff != "" {
 				t.Errorf("Unexpected servers (-want, +got): %v", diff)
-			}
-		})
-	}
-}
-
-func TestMakeHTTPServer(t *testing.T) {
-	cases := []struct {
-		name         string
-		httpProtocol network.HTTPProtocol
-		expected     *v1alpha3.Server
-	}{{
-		name:         "nil HTTP Server",
-		httpProtocol: network.HTTPDisabled,
-		expected:     nil,
-	}, {
-		name:         "HTTP server",
-		httpProtocol: network.HTTPEnabled,
-		expected: &v1alpha3.Server{
-			Hosts: []string{"*"},
-			Port: v1alpha3.Port{
-				Name:     httpServerPortName,
-				Number:   80,
-				Protocol: "HTTP",
-			},
-		},
-	}, {
-		name:         "Redirect HTTP server",
-		httpProtocol: network.HTTPRedirected,
-		expected: &v1alpha3.Server{
-			Hosts: []string{"*"},
-			Port: v1alpha3.Port{
-				Name:     httpServerPortName,
-				Number:   80,
-				Protocol: "HTTP",
-			},
-			TLS: &v1alpha3.TLSOptions{
-				HTTPSRedirect: true,
-			},
-		},
-	}}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			got := MakeHTTPServer(c.httpProtocol)
-			if diff := cmp.Diff(c.expected, got); diff != "" {
-				t.Errorf("Unexpected HTTP Server (-want, +got): %v", diff)
 			}
 		})
 	}

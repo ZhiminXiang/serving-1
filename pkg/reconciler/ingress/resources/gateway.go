@@ -31,7 +31,7 @@ import (
 	"knative.dev/pkg/apis/istio/v1alpha3"
 )
 
-var httpServerPortName = "http-server"
+var f = "http-server"
 
 // Istio Gateway requires to have at least one server. This placeholderServer is used when
 // all of the real servers are deleted.
@@ -55,16 +55,6 @@ func GetServers(gateway *v1alpha3.Gateway, ia v1alpha1.IngressAccessor) []v1alph
 	return SortServers(servers)
 }
 
-// GetHTTPServer gets the HTTP `Server` from `Gateway`.
-func GetHTTPServer(gateway *v1alpha3.Gateway) *v1alpha3.Server {
-	for _, server := range gateway.Spec.Servers {
-		if server.Port.Name == httpServerPortName {
-			return &server
-		}
-	}
-	return nil
-}
-
 func belongsToClusterIngress(server *v1alpha3.Server, ia v1alpha1.IngressAccessor) bool {
 	// The format of the portName should be "<clusteringress-name>:<number>".
 	// For example, route-test:0.
@@ -85,7 +75,7 @@ func SortServers(servers []v1alpha3.Server) []v1alpha3.Server {
 
 // MakeServers creates the expected Gateway `Servers` based on the given
 // ClusterIngress.
-func MakeServers(ia v1alpha1.IngressAccessor, gatewayServiceNamespace string, originSecrets map[string]*corev1.Secret) ([]v1alpha3.Server, error) {
+func MakeServers(ia v1alpha1.IngressAccessor, gatewayServiceNamespace string, originSecrets map[string]*corev1.Secret, httpProtocol network.HTTPProtocol) ([]v1alpha3.Server, error) {
 	servers := []v1alpha3.Server{}
 	// TODO(zhiminx): for the hosts that does not included in the ClusterIngressTLS but listed in the ClusterIngressRule,
 	// do we consider them as hosts for HTTP?
@@ -115,19 +105,24 @@ func MakeServers(ia v1alpha1.IngressAccessor, gatewayServiceNamespace string, or
 			},
 		})
 	}
+	if httpServer := makeHTTPServer(ia, httpProtocol); httpServer != nil {
+		servers = append(servers, *httpServer)
+	}
 	return SortServers(servers), nil
 }
 
-// MakeHTTPServer creates a HTTP Gateway `Server` based on the HTTPProtocol
-// configureation.
-func MakeHTTPServer(httpProtocol network.HTTPProtocol) *v1alpha3.Server {
+func makeHTTPServer(ia v1alpha1.IngressAccessor, httpProtocol network.HTTPProtocol) *v1alpha3.Server {
 	if httpProtocol == network.HTTPDisabled {
 		return nil
 	}
+	hosts := sets.String{}
+	for _, rule := range ia.GetSpec().Rules {
+		hosts.Insert(rule.Hosts...)
+	}
 	server := &v1alpha3.Server{
-		Hosts: []string{"*"},
+		Hosts: hosts.List(),
 		Port: v1alpha3.Port{
-			Name:     httpServerPortName,
+			Name:     fmt.Sprintf("%s:%d", ia.GetName(), len(ia.GetSpec().TLS)),
 			Number:   80,
 			Protocol: v1alpha3.ProtocolHTTP,
 		},
@@ -204,7 +199,7 @@ func UpdateGateway(gateway *v1alpha3.Gateway, want []v1alpha3.Server, existing [
 }
 
 func isDefaultServer(server *v1alpha3.Server) bool {
-	return server.Port.Name == "http" || server.Port.Name == "https"
+	return server.Port.Name == "http" || server.Port.Name == "https" || server.Port.Name == "http-server"
 }
 
 func isPlaceHolderServer(server *v1alpha3.Server) bool {

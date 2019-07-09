@@ -133,9 +133,14 @@ var (
 	}
 
 	ingressHTTPRedirectServer = v1alpha3.Server{
-		Hosts: []string{"*"},
+		Hosts: []string{
+			"domain.com",
+			"test-route.test-ns",
+			"test-route.test-ns.svc",
+			"test-route.test-ns.svc.cluster.local",
+		},
 		Port: v1alpha3.Port{
-			Name:     "http-server",
+			Name:     "reconciling-clusteringress:1",
 			Number:   80,
 			Protocol: v1alpha3.ProtocolHTTP,
 		},
