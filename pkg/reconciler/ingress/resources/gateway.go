@@ -22,11 +22,16 @@ import (
 	"sort"
 	"strings"
 
+	"knative.dev/pkg/system"
+
+	"knative.dev/pkg/kmeta"
+
 	"github.com/knative/serving/pkg/apis/networking/v1alpha1"
 	"github.com/knative/serving/pkg/network"
 	"github.com/knative/serving/pkg/reconciler/ingress/config"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"knative.dev/pkg/apis/istio/v1alpha3"
 )
@@ -71,6 +76,23 @@ func SortServers(servers []v1alpha3.Server) []v1alpha3.Server {
 		return strings.Compare(servers[i].Port.Name, servers[j].Port.Name) < 0
 	})
 	return servers
+}
+
+func MakeGateway(ia v1alpha1.IngressAccessor, originSecrets map[string]*corev1.Secret, httpProtocol network.HTTPProtocol) (*v1alpha3.Gateway, error) {
+	servers, err := MakeServers(ia, "istio-system", originSecrets, httpProtocol)
+	if err != nil {
+		return nil, err
+	}
+	return &v1alpha3.Gateway{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:            ia.GetName(),
+			Namespace:       system.Namespace(),
+			OwnerReferences: []metav1.OwnerReference{*kmeta.NewControllerRef(ia)},
+		},
+		Spec: v1alpha3.GatewaySpec{
+			Selector: map[string]string{"istio": "ingressgateway"},
+			Servers:  servers,
+		}}, nil
 }
 
 // MakeServers creates the expected Gateway `Servers` based on the given
