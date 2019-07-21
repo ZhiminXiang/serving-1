@@ -61,14 +61,14 @@ func GetServers(gateway *v1alpha3.Gateway, ia v1alpha1.IngressAccessor) []v1alph
 	return SortServers(servers)
 }
 
-// GetHTTPServer gets the HTTP `Server` from `Gateway`.
-func GetHTTPServer(gateway *v1alpha3.Gateway) *v1alpha3.Server {
+func GetDefaultServers(gateway *v1alpha3.Gateway) []v1alpha3.Server {
+	result := []v1alpha3.Server{}
 	for _, server := range gateway.Spec.Servers {
-		if server.Port.Name == httpServerPortName {
-			return &server
+		if isDefaultServer(&server) {
+			result = append(result, server)
 		}
 	}
-	return nil
+	return result
 }
 
 func belongsToClusterIngress(server *v1alpha3.Server, ia v1alpha1.IngressAccessor) bool {
@@ -151,7 +151,7 @@ func makeGateway(ctx context.Context, ia v1alpha1.IngressAccessor, originSecrets
 
 func GatewayName(ia v1alpha1.IngressAccessor, gatewaySvc *corev1.Service) string {
 	gatewayServiceKey := fmt.Sprintf("%s/%s", gatewaySvc.Namespace, gatewaySvc.Name)
-	return fmt.Sprintf("%s-%s", ia.GetName(), adler32.Checksum([]byte(gatewayServiceKey)))
+	return fmt.Sprintf("%s-%d", ia.GetName(), adler32.Checksum([]byte(gatewayServiceKey)))
 }
 
 // makeTLSServers creates the expected Gateway `Servers` based on the given
@@ -283,10 +283,10 @@ func isPlaceHolderServer(server *v1alpha3.Server) bool {
 	return equality.Semantic.DeepEqual(server, &placeholderServer)
 }
 
-func GetGatewayNames(gateways []*v1alpha3.Gateway) []string {
+func GetQualifiedGatewayNames(gateways []*v1alpha3.Gateway) []string {
 	names := []string{}
 	for _, gateway := range gateways {
-		names = append(names, gateway.Name)
+		names = append(names, fmt.Sprintf("%s/%s", gateway.Namespace, gateway.Name))
 	}
 	return names
 }

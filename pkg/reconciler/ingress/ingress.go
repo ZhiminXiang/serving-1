@@ -277,7 +277,7 @@ func (r *BaseIngressReconciler) reconcileIngress(ctx context.Context, ra Reconci
 				return err
 			}
 		}
-		gatewayNames[v1alpha1.IngressVisibilityExternalIP] = append(gatewayNames[v1alpha1.IngressVisibilityExternalIP], resources.GetGatewayNames(ingressGateways)...)
+		gatewayNames[v1alpha1.IngressVisibilityExternalIP] = append(gatewayNames[v1alpha1.IngressVisibilityExternalIP], resources.GetQualifiedGatewayNames(ingressGateways)...)
 	}
 
 	vses := resources.MakeVirtualServices(ia, gatewayNames)
@@ -497,7 +497,8 @@ func (r *BaseIngressReconciler) reconcileSharedGateway(ctx context.Context, ia v
 	}
 
 	existing := resources.GetServers(gateway, ia)
-	if equality.Semantic.DeepEqual(existing, desired) {
+	defaultServers := resources.GetDefaultServers(gateway)
+	if equality.Semantic.DeepEqual(existing, desired) && len(defaultServers) == 0 {
 		return nil
 	}
 
