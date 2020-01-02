@@ -67,6 +67,7 @@ ${KNATIVE_CODEGEN_PKG}/hack/generate-knative.sh "injection" \
   "certmanager:v1alpha2 acme:v1alpha2" \
   --go-header-file ${REPO_ROOT_DIR}/hack/boilerplate/boilerplate.go.txt
 
+echo ">>>>>>>Deepcopy"
 # Depends on generate-groups.sh to install bin/deepcopy-gen
 ${GOPATH}/bin/deepcopy-gen \
   -O zz_generated.deepcopy \
