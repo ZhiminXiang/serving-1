@@ -44,8 +44,8 @@ spec:
       jsonPath: ".status.conditions[?(@.type==\"Ready\")].reason"
   names:
     kind: Certificate
-    plural: certificates
-    singular: certificate
+    plural: kcertificates
+    singular: kcertificate
     categories:
     - knative-internal
     - networking
