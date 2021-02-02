@@ -42,8 +42,9 @@ import (
 
 // Reconciler implements controller.Reconciler for DomainMapping resources.
 type Reconciler struct {
-	ingressLister networkinglisters.IngressLister
-	netclient     netclientset.Interface
+	ingressLister     networkinglisters.IngressLister
+	domainClaimLister networkinglisters.ClusterDomainClaimLister
+	netclient         netclientset.Interface
 }
 
 // Check that our Reconciler implements Interface
@@ -129,7 +130,7 @@ func (r *Reconciler) reconcileIngress(ctx context.Context, dm *v1alpha1.DomainMa
 }
 
 func (r *Reconciler) reconcileDomainClaim(ctx context.Context, dm *v1alpha1.DomainMapping) error {
-	dc, err := r.netclient.NetworkingV1alpha1().ClusterDomainClaims().Get(ctx, dm.Name, metav1.GetOptions{})
+	dc, err := r.domainClaimLister.Get(dm.Name)
 	if apierrs.IsNotFound(err) {
 		if dc, err = r.netclient.NetworkingV1alpha1().ClusterDomainClaims().Create(ctx, resources.MakeDomainClaim(dm), metav1.CreateOptions{}); err != nil {
 			return fmt.Errorf("failed to create ClusterDomainClaim: %w", err)
